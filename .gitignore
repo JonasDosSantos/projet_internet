@@ -1,0 +1,13 @@
+# Binaires
+/bin/
+/dist/
+*.exe
+*.test
+main
+
+# Fichiers spécifiques OS
+.DS_Store
+
+# Fichiers IDE (optionnel mais recommandé)
+.vscode/
+.idea/
