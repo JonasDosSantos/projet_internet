@@ -3,9 +3,10 @@ package main
 import (
 	"fmt"
 	"log"
-	"project/pkg/client"
-	"project/pkg/identity"
-	"project/pkg/p2p"
+	"github.com/JonasDosSantos/projet_internet/pkg/filesystem"
+	"github.com/JonasDosSantos/projet_internet/pkg/client"
+	"github.com/JonasDosSantos/projet_internet/pkg/identity"
+	"github.com/JonasDosSantos/projet_internet/pkg/p2p"
 )
 
 func main() {

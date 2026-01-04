@@ -6,8 +6,8 @@ import (
 	"strings"
 	"fmt"
 	"net"
-	"project/pkg/identity"
-	"project/pkg/client"
+	"github.com/JonasDosSantos/projet_internet/pkg/identity"
+	"github.com/JonasDosSantos/projet_internet/pkg/client"
 )
 
 type Me struct {
