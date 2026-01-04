@@ -1,3 +1,3 @@
-module github.com/JonasDosSantos/projet_internet
+module project
 
 go 1.22.2
