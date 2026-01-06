@@ -6,7 +6,7 @@ Ce projet implémente un système de partage de fichiers en lecture seule via un
 1.  **Serveur Central (HTTP)** : Pour s'enregistrer et trouver d'autres pairs[cite: 8].
 2.  **Peer-to-Peer (UDP)** : Pour échanger les fichiers directement[cite: 9].
 
-## 📂 Structure du code
+## Structure du code
 
 Voici où trouver et placer le code pour chaque partie du projet :
 
@@ -36,3 +36,12 @@ go mod tidy
 
 ## Lancer le pair
 go run cmd/peer/main.go
+
+## Tests suggérés
+Diagnostic :
+go run cmd/peer/main.go -name "TestSolo" -port 8085
+
+Alice & Bob :
+go run cmd/peer/main.go -name "Alice" -port 8081 -share "secret.txt"
+go run cmd/peer/main.go -name "Bob" -port 8082 -connect "127.0.0.1:8081"
+

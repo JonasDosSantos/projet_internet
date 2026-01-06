@@ -1,103 +1,150 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
-	"github.com/JonasDosSantos/projet_internet/pkg/filesystem"
-	"github.com/JonasDosSantos/projet_internet/pkg/client"
-	"github.com/JonasDosSantos/projet_internet/pkg/identity"
-	"github.com/JonasDosSantos/projet_internet/pkg/p2p"
+	"time"
+
+	// Vos packages locaux
+	"project/pkg/client"
+	"project/pkg/filesystem"
+	"project/pkg/identity"
+	"project/pkg/p2p"
 )
 
 func main() {
-	// --- CONFIGURATION ---
+	// --- 1. CONFIGURATION (ARGUMENTS & CONSTANTES) ---
 	serverURL := "https://jch.irif.fr:8443"
+	// Adresse UDP du serveur pour l'enregistrement (IP du sujet)
 	serverUDPAddr := "81.194.30.229:8443"
-	myPeerName := "test1" // Utilise un nouveau nom pour éviter l'erreur 500
-	myUDPPort := 1234
 
-	fmt.Println("=== INITIALISATION DU PEER ===")
+	// Drapeaux (flags)
+	namePtr := flag.String("name", "peer-test", "Nom unique du peer")
+	portPtr := flag.Int("port", 8080, "Port UDP d'écoute")
+	sharePtr := flag.String("share", "", "Chemin du fichier ou dossier à partager")
+	connectPtr := flag.String("connect", "", "Adresse IP:Port d'un autre peer à contacter")
 
-	// --- ÉTAPE 1 : GÉNÉRATION DE L'IDENTITÉ ---
-	fmt.Println("1. Génération de la clé ECDSA...")
+	flag.Parse()
+
+	myPeerName := *namePtr
+	myUDPPort := *portPtr
+
+	fmt.Printf("\n=== LANCEMENT DU PEER '%s' SUR LE PORT %d ===\n", myPeerName, myUDPPort)
+
+	// --- 2. IDENTITÉ ET CRYPTOGRAPHIE ---
+	fmt.Println("[1/6] Génération de l'identité cryptographique...")
 	privateKey, err := identity.KeyGen()
 	if err != nil {
-		log.Fatal("Erreur lors de la génération de clé : ", err)
+		log.Fatal("Erreur critique (KeyGen) : ", err)
 	}
 	pubKeyBytes := identity.PublicKeyToBytes(&privateKey.PublicKey)
 
-	// --- ÉTAPE 2 : ENREGISTREMENT HTTP ---
-	fmt.Printf("2. Enregistrement de '%s' sur le serveur REST...\n", myPeerName)
+	// --- 3. DIAGNOSTICS SERVEUR (Extrait de l'ancien Main) ---
+	fmt.Println("[2/6] Diagnostics connexion Serveur REST...")
+
+	// A. Enregistrement
+	fmt.Print(" -> Tentative d'enregistrement... ")
 	err = client.Register(serverURL, myPeerName, pubKeyBytes)
 	if err != nil {
-		fmt.Printf("Erreur d'enregistrement HTTP : %v\n", err)
+		fmt.Printf("Warning (%v) - On continue.\n", err)
 	} else {
-		fmt.Println("Enregistrement HTTP réussi (Code 204).")
+		fmt.Println("Succès.")
 	}
 
-	// --- NOUVELLE ÉTAPE : RÉCUPÉRATION DES INFOS DU RÉSEAU ---
-	fmt.Println("\n--- INTERROGATION DU SERVEUR REST ---")
-
-	// 1. Récupérer la liste des peers
+	// B. Liste des peers
+	fmt.Print(" -> Récupération de la liste des peers... ")
 	peers, err := client.GetPeerList(serverURL)
 	if err != nil {
-		fmt.Printf("Erreur GetPeerList : %v\n", err)
+		fmt.Printf("Erreur (%v)\n", err)
 	} else {
-		fmt.Printf("Liste des peers récupérée (%d peers trouvés) :\n", len(peers))
-		
-		// BOUCLE À RAJOUTER :
-		for _, name := range peers {
-			if name != "" { // On évite d'afficher les lignes vides
-				fmt.Printf("  -> %s\n", name)
+		fmt.Printf("%d peers trouvés.\n", len(peers))
+		// On affiche les 5 premiers pour info
+		for i := 0; i < len(peers) && i < 5; i++ {
+			if peers[i] != "" {
+				fmt.Printf("    - %s\n", peers[i])
 			}
+		}
+		if len(peers) > 5 {
+			fmt.Println("    - ...")
 		}
 	}
 
-	// 2. Récupérer la clé publique de jch.irif.fr
-	serverPeerName := "jch.irif.fr"
-	fmt.Printf("Récupération de la clé pour '%s'...\n", serverPeerName)
-	serverKey, err := client.GetPublicKey(serverURL, serverPeerName)
+	// C. Vérification clé du serveur
+	fmt.Print(" -> Récupération clé serveur (jch.irif.fr)... ")
+	_, err = client.GetPublicKey(serverURL, "jch.irif.fr")
 	if err != nil {
-		fmt.Printf("Erreur GetPublicKey : %v\n", err)
+		fmt.Printf("Erreur (%v)\n", err)
 	} else {
-		fmt.Printf("Clé de %s récupérée (%d octets).\n", serverPeerName, len(serverKey))
+		fmt.Println("OK.")
 	}
 
-	// 3. Récupérer les adresses UDP de jch.irif.fr
-	fmt.Printf("Récupération des adresses UDP pour '%s'...\n", serverPeerName)
-	addrs, err := client.GetPeerAddresses(serverURL, serverPeerName)
-	if err != nil {
-		fmt.Printf("Erreur GetPeerAddresses : %v\n", err)
-	} else {
-		fmt.Printf("Adresses de %s : %v\n", serverPeerName, addrs)
-	}
-	fmt.Println("-------------------------------------\n")
-
-	// --- ÉTAPE 3 : DÉMARRAGE DU SERVEUR UDP ---
-	fmt.Printf("3. Ouverture du port UDP %d...\n", myUDPPort)
+	// --- 4. DÉMARRAGE DU MOTEUR P2P (UDP) ---
+	fmt.Println("[3/6] Démarrage du serveur UDP...")
 	me, err := p2p.NewCommunication(myUDPPort, privateKey, myPeerName, serverURL)
 	if err != nil {
-		log.Fatal("Erreur lors de l'ouverture du port UDP : ", err)
+		log.Fatal("Erreur critique (UDP) : ", err)
 	}
 
-	go me.ListenLoop()
+	// --- 5. CHARGEMENT DES FICHIERS (SI MODE PARTAGE) ---
+	if *sharePtr != "" {
+		fmt.Printf("[4/6] Mode 'Seeder' activé. Traitement de : %s\n", *sharePtr)
+		nodes, err := filesystem.Build__merkle__from__path(*sharePtr)
+		if err != nil {
+			log.Fatal("Erreur Merkle : ", err)
+		}
+		me.LoadFileSystem(nodes)
+	} else {
+		fmt.Println("[4/6] Mode 'Leecher' (pas de fichiers partagés).")
+	}
 
-	// --- ÉTAPE 4 : CONTACT UDP INITIAL ---
-	fmt.Printf("4. Envoi du message Hello à %s...\n", serverUDPAddr)
+	// --- 6. LANCEMENT DE L'ÉCOUTE ---
+	go me.ListenLoop()
+	fmt.Println(" -> ListenLoop active.")
+
+	// --- 7. ACTIONS RÉSEAU ---
+	fmt.Println("[5/6] Initialisation des contacts...")
+
+	// ACTION A : Enregistrement IP auprès du serveur (Hole Punching)
+	// C'est important de le faire systématiquement
+	fmt.Printf(" -> Envoi Hello au serveur (%s) pour enregistrer l'IP...\n", serverUDPAddr)
 	err = me.SendHello(serverUDPAddr)
 	if err != nil {
-		fmt.Printf("Erreur lors de l'envoi du Hello UDP : %v\n", err)
-	} else {
-		fmt.Println("Hello UDP envoyé !")
+		fmt.Printf("    Erreur envoi serveur: %v\n", err)
 	}
 
-	// --- ÉTAPE 5 : MAINTIEN EN VIE ---
-	fmt.Println("\n============================================")
-	fmt.Println("Le peer est actif et écoute le réseau.")
-	fmt.Println("Appuyez sur 'Entrée' pour fermer le programme.")
-	fmt.Println("============================================")
+	// ACTION B : Connexion P2P ciblée (Si argument --connect fourni)
+	if *connectPtr != "" {
+		targetAddr := *connectPtr
+		fmt.Printf("\n--- SCÉNARIO DE TÉLÉCHARGEMENT VERS %s ---\n", targetAddr)
 
-	var input string
-	fmt.Scanln(&input)
-	fmt.Println("Fermeture du peer.")
+		// 1. Handshake
+		fmt.Print(" -> Envoi du HELLO au pair... ")
+		err = me.SendHello(targetAddr)
+		if err != nil {
+			fmt.Printf("ERREUR: %v\n", err)
+		} else {
+			fmt.Println("OK.")
+		}
+
+		// Attente active
+		time.Sleep(2 * time.Second)
+
+		// 2. Request Root
+		fmt.Print(" -> Envoi du ROOT REQUEST... ")
+		err = me.SendRootRequest(targetAddr)
+		if err != nil {
+			fmt.Printf("ERREUR: %v\n", err)
+		} else {
+			fmt.Println("OK (En attente de réponse...).")
+		}
+	} else {
+		fmt.Println("\n[INFO] Pas de cible P2P spécifiée. Le peer attend les connexions.")
+	}
+
+	// --- MAINTIEN EN VIE ---
+	fmt.Println("\n===================================================")
+	fmt.Println("  Le peer est actif. CTRL+C pour quitter.")
+	fmt.Println("===================================================")
+	select {}
 }
