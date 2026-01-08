@@ -30,7 +30,7 @@ func ExtractPubKey(priv *ecdsa.PrivateKey) (*ecdsa.PublicKey, error) {
 // en crypto on manipule des clefs mais pour faciliter les échanges il nous faut pouvoir transformer ces clefs en octets
 
 // transforme une clef en une chaine d'octets.
-func PublicKeyToBytes(pub *ecdsa.PublicKey) []byte {
+func PublicKey__to__bytes(pub *ecdsa.PublicKey) []byte {
 
 	// on creer une notre chaine d'octets de longueur 64
     formatted := make([]byte, 64)
@@ -43,7 +43,7 @@ func PublicKeyToBytes(pub *ecdsa.PublicKey) []byte {
 }
 
 // transforme une chaine d'octets en clef
-func BytesToPublicKey(data []byte) (*ecdsa.PublicKey, error) {
+func Bytes__to__PublicKey(data []byte) (*ecdsa.PublicKey, error) {
 	// erreur si mauvaise taille de chaine d'octets
     if len(data) != 64 {
         return nil, fmt.Errorf("la clé doit comporter exactement 64 octets")
@@ -82,7 +82,7 @@ func Sign(priv *ecdsa.PrivateKey, data []byte) ([]byte, error) {
 }
 
 // fonction qui prend des data et une sigature et qui verifie si la signature est correcte
-func VerifySignature(pub *ecdsa.PublicKey, data []byte, signature []byte) bool {
+func Verify__signature(pub *ecdsa.PublicKey, data []byte, signature []byte) bool {
 
 	// erreur si mauvaise taille de signature
     if len(signature) != 64 {

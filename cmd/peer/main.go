@@ -38,7 +38,7 @@ func main() {
 	if err != nil {
 		log.Fatal("Erreur critique (KeyGen) : ", err)
 	}
-	pubKeyBytes := identity.PublicKeyToBytes(&privateKey.PublicKey)
+	pubKeyBytes := identity.PublicKey__to__bytes(&privateKey.PublicKey)
 
 	// --- 3. DIAGNOSTICS SERVEUR (Extrait de l'ancien Main) ---
 	fmt.Println("[2/6] Diagnostics connexion Serveur REST...")
@@ -54,7 +54,7 @@ func main() {
 
 	// B. Liste des peers
 	fmt.Print(" -> Récupération de la liste des peers... ")
-	peers, err := client.GetPeerList(serverURL)
+	peers, err := client.Get__peer__list(serverURL)
 	if err != nil {
 		fmt.Printf("Erreur (%v)\n", err)
 	} else {
@@ -72,7 +72,7 @@ func main() {
 
 	// C. Vérification clé du serveur
 	fmt.Print(" -> Récupération clé serveur (jch.irif.fr)... ")
-	_, err = client.GetPublicKey(serverURL, "jch.irif.fr")
+	_, err = client.Get__publicKey(serverURL, "jch.irif.fr")
 	if err != nil {
 		fmt.Printf("Erreur (%v)\n", err)
 	} else {
@@ -81,7 +81,7 @@ func main() {
 
 	// --- 4. DÉMARRAGE DU MOTEUR P2P (UDP) ---
 	fmt.Println("[3/6] Démarrage du serveur UDP...")
-	me, err := p2p.NewCommunication(myUDPPort, privateKey, myPeerName, serverURL)
+	me, err := p2p.New_communication(myUDPPort, privateKey, myPeerName, serverURL)
 	if err != nil {
 		log.Fatal("Erreur critique (UDP) : ", err)
 	}
@@ -99,8 +99,8 @@ func main() {
 	}
 
 	// --- 6. LANCEMENT DE L'ÉCOUTE ---
-	go me.ListenLoop()
-	fmt.Println(" -> ListenLoop active.")
+	go me.Listen__loop()
+	fmt.Println(" -> Listen__loop active.")
 
 	// --- 7. ACTIONS RÉSEAU ---
 	fmt.Println("[5/6] Initialisation des contacts...")
@@ -108,7 +108,7 @@ func main() {
 	// ACTION A : Enregistrement IP auprès du serveur (Hole Punching)
 	// C'est important de le faire systématiquement
 	fmt.Printf(" -> Envoi Hello au serveur (%s) pour enregistrer l'IP...\n", serverUDPAddr)
-	err = me.SendHello(serverUDPAddr)
+	err = me.Send__hello(serverUDPAddr)
 	if err != nil {
 		fmt.Printf("    Erreur envoi serveur: %v\n", err)
 	}
@@ -120,7 +120,7 @@ func main() {
 
 		// 1. Handshake
 		fmt.Print(" -> Envoi du HELLO au pair... ")
-		err = me.SendHello(targetAddr)
+		err = me.Send__hello(targetAddr)
 		if err != nil {
 			fmt.Printf("ERREUR: %v\n", err)
 		} else {
@@ -132,7 +132,7 @@ func main() {
 
 		// 2. Request Root
 		fmt.Print(" -> Envoi du ROOT REQUEST... ")
-		err = me.SendRootRequest(targetAddr)
+		err = me.Send__RootRequest(targetAddr)
 		if err != nil {
 			fmt.Printf("ERREUR: %v\n", err)
 		} else {

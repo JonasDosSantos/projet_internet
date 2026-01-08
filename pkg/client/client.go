@@ -39,7 +39,7 @@ func Register(serverURL string, name string, key []byte) error {
 }
 
 // fonction pour obtenir une liste de 200 peers auprès du serveur
-func GetPeerList(serverURL string) ([]string, error) {
+func Get__peer__list(serverURL string) ([]string, error) {
 
 	// on construit l'URL à laquelle on enverra la requête
 	url := fmt.Sprintf("%s/peers/", serverURL)
@@ -65,7 +65,7 @@ func GetPeerList(serverURL string) ([]string, error) {
 }
 
 // focntion pour obtenir la clef privée d'un certain peer (paramètre peerName)
-func GetPublicKey(serverURL string, peerName string) ([]byte, error) {
+func Get__publicKey(serverURL string, peerName string) ([]byte, error) {
 
 	// on construit l'URL
 	url := fmt.Sprintf("%s/peers/%s/key", serverURL, peerName)
@@ -97,7 +97,7 @@ func GetPublicKey(serverURL string, peerName string) ([]byte, error) {
 }
 
 // fonction pour obtenir les adresses UDP d'un peer
-func GetPeerAddresses(serverURL string, peerName string) ([]string, error) {
+func Get__peer__adresses(serverURL string, peerName string) ([]string, error) {
 
 	// on construit l'URL
 	url := fmt.Sprintf("%s/peers/%s/addresses", serverURL, peerName)

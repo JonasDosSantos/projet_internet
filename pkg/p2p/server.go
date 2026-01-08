@@ -13,6 +13,11 @@ import (
 	"strings"
 )
 
+// EN PLUS DU TIMEOUT IL FAUT FAIRE UN FONCTION QUI VERIFIE SI LE PEER QUI VIENT DE NOUS ENVOYER UN MESSAGE ETAIT DANS NOTRE LISTE DE " CONNEXION COURANTE" ////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// FAIRE UN TIMEOUT AVEC LE SERVEUR AUSSI ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 type Me struct {
 	Conn       *net.UDPConn
 	PrivateKey *ecdsa.PrivateKey
@@ -39,10 +44,10 @@ func (me *Me) LoadFileSystem(nodes []filesystem.Node) {
 }
 
 // Nous avons fais le choix de dériver (très simplement) notre propre clef publique pour définir l'ID de nos messages
-func (me *Me) generateIdFromKey() uint32 {
+func (me *Me) Generate__id__from__key() uint32 {
 
 	// On transforme notre clef en chaine d'octets
-	pubBytes := identity.PublicKeyToBytes(&me.PrivateKey.PublicKey)
+	pubBytes := identity.PublicKey__to__bytes(&me.PrivateKey.PublicKey)
 
 	// Ce sera notre ID
 	idBuffer := make([]byte, 4)
@@ -59,7 +64,8 @@ func (me *Me) generateIdFromKey() uint32 {
 	return binary.BigEndian.Uint32(idBuffer)
 }
 
-func NewCommunication(port int, priv *ecdsa.PrivateKey, name string, serverURL string) (*Me, error) {
+// fonction pour établir une nouvelle connexion UDP
+func New_communication(port int, priv *ecdsa.PrivateKey, name string, serverURL string) (*Me, error) {
 
 	// on prépare l'adresse à laquelel on va recevoir les messages via UDP (adresse locale)
 	addr, err := net.ResolveUDPAddr("udp", fmt.Sprintf(":%d", port))
@@ -85,7 +91,7 @@ func NewCommunication(port int, priv *ecdsa.PrivateKey, name string, serverURL s
 // ENVOIE DES MESSAGES Hello ET Ping
 
 // fonction qui envoie Hello à une destination (paramètre destAddr)
-func (me *Me) SendHello(destAddr string) error {
+func (me *Me) Send__hello(destAddr string) error {
 
 	// on prépare l'adresse de destination pour UDP
 	udpAddr, err := net.ResolveUDPAddr("udp", destAddr)
@@ -100,7 +106,7 @@ func (me *Me) SendHello(destAddr string) error {
 	copy(body[4:], []byte(me.PeerName))
 
 	// on génère l'ID avec notre fonction qui dérive notre clef publique
-	msgId := me.generateIdFromKey()
+	msgId := me.Generate__id__from__key()
 
 	msg := Message{
 		Id:   msgId,
@@ -122,7 +128,7 @@ func (me *Me) SendHello(destAddr string) error {
 }
 
 // fonction qui envoie un ping à une destination
-func (me *Me) SendPing(destAddr string) error {
+func (me *Me) Send__ping(destAddr string) error {
 
 	// on prépare l'adresse de destination pour UDP
 	udpAddr, err := net.ResolveUDPAddr("udp", destAddr)
@@ -130,7 +136,7 @@ func (me *Me) SendPing(destAddr string) error {
 		return err
 	}
 
-	msgID := me.generateIdFromKey()
+	msgID := me.Generate__id__from__key()
 
 	// on cree la struct Message du ping
 	msg := Message{
@@ -148,15 +154,15 @@ func (me *Me) SendPing(destAddr string) error {
 }
 
 // fonction qui envoie un rootRequest à une destination
-func (me *Me) SendRootRequest(destAddr string) error {
+func (me *Me) Send__RootRequest(destAddr string) error {
 	udpAddr, err := net.ResolveUDPAddr("udp", destAddr)
 	if err != nil {
 		return err
 	}
 
-	// Ici le body envoyé est vide >> il sera rempli par un handler
+	// Ici le body envoyé est vide, il sera rempli par un handler
 	msg := Message{
-		Id:   me.generateIdFromKey(),
+		Id:   me.Generate__id__from__key(),
 		Type: TypeRootRequest,
 		Body: []byte{},
 	}
@@ -167,18 +173,18 @@ func (me *Me) SendRootRequest(destAddr string) error {
 }
 
 // fonction qui envoie une datumRequest à une destination
-func (me *Me) SendDatumRequest(destAddr string, hash [32]byte) error {
+func (me *Me) Send__DatumRequest(destAddr string, hash [32]byte) error {
 	udpAddr, err := net.ResolveUDPAddr("udp", destAddr)
 	if err != nil {
 		return err
 	}
 
-	// Le body doit contenir exactement les 32 octets du hash demandé
+	// Le body doit contenir les 32 octets du hash demandé
 	body := make([]byte, 32)
 	copy(body, hash[:])
 
 	msg := Message{
-		Id:   me.generateIdFromKey(),
+		Id:   me.Generate__id__from__key(),
 		Type: TypeDatumRequest, // 3
 		Body: body,
 	}
@@ -190,7 +196,7 @@ func (me *Me) SendDatumRequest(destAddr string, hash [32]byte) error {
 // HANDLERS DE GESTION LORS DE LA RECEPTION DE Hello, Ping ET Error
 
 // fonction qui gère la réception d'un Hello
-func (me *Me) handleHello(req *Message, addr *net.UDPAddr) {
+func (me *Me) Handle__hello(req *Message, addr *net.UDPAddr) {
 
 	// on récupère le nom de l'emetteur (le nom est placé après les 4octets de bitmap représentants les extensions)
 	if len(req.Body) < 4 {
@@ -201,18 +207,18 @@ func (me *Me) handleHello(req *Message, addr *net.UDPAddr) {
 	fmt.Printf("Vérification du Hello de : '%s'\n", sender)
 
 	// on récupère la clef publique de l'emetteur en la demandant au serveur
-	pubKeyBytes, err := client.GetPublicKey(me.ServerURL, sender)
+	pubKeyBytes, err := client.Get__publicKey(me.ServerURL, sender)
 	if err != nil {
 		fmt.Printf("clef de %s introuvable\n", sender)
 		return
 	}
-	pubKey, _ := identity.BytesToPublicKey(pubKeyBytes)
+	pubKey, _ := identity.Bytes__to__PublicKey(pubKeyBytes)
 
 	// Il ne faut pas vérifier tout le message mais seulement le "header" + le body
 	dataToVerify := req.Serialize()[:7+len(req.Body)]
 
 	// on vérifie
-	if !identity.VerifySignature(pubKey, dataToVerify, req.Signature) {
+	if !identity.Verify__signature(pubKey, dataToVerify, req.Signature) {
 		fmt.Printf("signature invalide recue de %s, message jeté\n", sender)
 		return
 	}
@@ -236,10 +242,15 @@ func (me *Me) handleHello(req *Message, addr *net.UDPAddr) {
 	sig, _ := identity.Sign(me.PrivateKey, unsignedData)
 	reply.Signature = sig
 	me.Conn.WriteToUDP(reply.Serialize(), addr)
+
+	//TIMEOUT DE 5 MINUTES ////////////////////////////////////////////////////////////////////////////////////////////////
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 }
 
 // fonction qui gère la réception d'un ping
-func (me *Me) handlePing(req *Message, addr *net.UDPAddr) error {
+func (me *Me) Handle__ping(req *Message, addr *net.UDPAddr) error {
 
 	// on cree la struct Message de la réponse
 	reply := Message{
@@ -254,18 +265,29 @@ func (me *Me) handlePing(req *Message, addr *net.UDPAddr) error {
 	// on renvoie le OK à l'emetteur
 	_, err := me.Conn.WriteToUDP(data, addr)
 	return err
+
+
+	// MAJ DU TIMEOUT DE 5 MINUTES ////////////////////////////////////////////////////////////////////////////////////////////////
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 }
 
 // focntion qui gère les messages d'erreurs recus
-func (me *Me) handleError(msg *Message, addr *net.UDPAddr) {
+func (me *Me) Handle__error(msg *Message, addr *net.UDPAddr) {
 	errorMessage := string(msg.Body)
 
 	fmt.Printf("Error recu de %s (Id: %d) :\n", addr, msg.Id)
 	fmt.Printf(">> Message : %s\n", errorMessage)
+
+	// POUR LE MOMENT, ON NE RENVOIE JAMAIS D'ERREUR (mais on sait lire le message d'erreur de quelqu'un d'autre) ////////////////////////////////////////////////////////////////////////////////////////////////
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 }
 
 // fonction qui gère les messages RootRequest = une demande d'envoi du roothash
-func (me *Me) handleRootRequest(req *Message, addr *net.UDPAddr) {
+func (me *Me) Handle__RootRequest(req *Message, addr *net.UDPAddr) {
 	fmt.Printf("RootRequest reçue de %s\n", addr)
 
 	// le corps de la réponse est simplement le RootHash (32 octets)
@@ -296,8 +318,8 @@ func (me *Me) handleRootRequest(req *Message, addr *net.UDPAddr) {
 }
 
 // Handler pour les DatumRequest
-func (me *Me) handleDatumRequest(req *Message, addr *net.UDPAddr) {
-	// Vérification de sécurité : la requête doit contenir un hash de 32 octets
+func (me *Me) Handle__DatumRequest(req *Message, addr *net.UDPAddr) {
+	// par sécurité, on vérifie que la requête contient bien un hash de 32 octets
 	if len(req.Body) != 32 {
 		fmt.Printf("DatumRequest invalide de %s (taille body incorrecte)\n", addr)
 		return
@@ -350,7 +372,7 @@ func (me *Me) handleDatumRequest(req *Message, addr *net.UDPAddr) {
 }
 
 // Cette fonction reçoit la réponse à la requête de Root, et envoie une DatumRequest avec le hash reçu
-func (me *Me) handleRootReply(msg *Message, addr *net.UDPAddr) {
+func (me *Me) Handle__RootReply(msg *Message, addr *net.UDPAddr) {
 	// Vérification de la taille (le hash doit faire 32 octets)
 	if len(msg.Body) < 32 {
 		fmt.Printf("RootReply invalide reçu de %s (taille < 32)\n", addr)
@@ -370,17 +392,17 @@ func (me *Me) handleRootReply(msg *Message, addr *net.UDPAddr) {
 
 	fmt.Printf(" -> Envoi automatique de DatumRequest pour le hash %x...\n", rootHash[:5]) // On affiche juste le début pour la lisibilité
 
-	// On convertit la slice en array [32]byte pour la fonction SendDatumRequest
+	// On convertit la slice en array [32]byte pour la fonction Send__DatumRequest
 	var hashArray [32]byte
 	copy(hashArray[:], rootHash)
 
-	err := me.SendDatumRequest(addr.String(), hashArray)
+	err := me.Send__DatumRequest(addr.String(), hashArray)
 	if err != nil {
 		fmt.Printf("Erreur envoi DatumRequest: %v\n", err)
 	}
 }
 
-func (me *Me) handleDatum(msg *Message, addr *net.UDPAddr) {
+func (me *Me) Handle__Datum(msg *Message, addr *net.UDPAddr) {
 	// 1. Validation de la structure du message
 	// Le body doit contenir au moins le Hash (32 octets) + 1 octet de Type de noeud
 	if len(msg.Body) <= 32 {
@@ -438,7 +460,7 @@ func (me *Me) handleDatum(msg *Message, addr *net.UDPAddr) {
 			fmt.Printf("      - Fichier trouvé : %s (Hash: %x...)\n", name, childHash[:5])
 
 			// RÉCURSION : On demande le contenu de ce fichier/dossier enfant !
-			go me.SendDatumRequest(addr.String(), childHash)
+			go me.Send__DatumRequest(addr.String(), childHash)
 		}
 
 	case filesystem.TypeBig: // 2 (et TypeBigDirectory = 3)
@@ -459,7 +481,7 @@ func (me *Me) handleDatum(msg *Message, addr *net.UDPAddr) {
 			fmt.Printf("      - Morceau %d (Hash: %x...)\n", i+1, childHash[:5])
 
 			// RÉCURSION : On demande ce morceau
-			go me.SendDatumRequest(addr.String(), childHash)
+			go me.Send__DatumRequest(addr.String(), childHash)
 		}
 
 	default:
@@ -496,7 +518,7 @@ func (me *Me) handleNoDatum(msg *Message, addr *net.UDPAddr) {
 	dataToVerify := msg.Serialize()[:7+len(msg.Body)] // Tout le message jusqu'à la fin du body
 
 	// Note : Dans un code complet, il faut retrouver la pubKey associée à 'addr'
-	// et appeler identity.VerifySignature(pubKey, dataToVerify, msg.Signature)
+	// et appeler identity.Verify__signature(pubKey, dataToVerify, msg.Signature)
 	if len(msg.Signature) != 64 {
 		fmt.Printf("ALERTE: NoDatum non signé (ou mal signé) reçu de %s. Ignoré.\n", addr)
 		return
@@ -512,8 +534,8 @@ func (me *Me) handleNoDatum(msg *Message, addr *net.UDPAddr) {
 
 // BOUCLE D'ECOUTE
 
-// Boucle qui écoute les messages arrivant sur le port définit par la fonction NewCommunication
-func (me *Me) ListenLoop() {
+// Boucle qui écoute les messages arrivant sur le port définit par la fonction New_communication
+func (me *Me) Listen__loop() {
 
 	// on prépare un buffer de 2048 octets
 	buffer := make([]byte, 2048)
@@ -543,15 +565,15 @@ func (me *Me) ListenLoop() {
 		// si Ping on appelle notre handler prévu
 		case TypePing:
 			fmt.Printf("ping recu de %s\n", addr)
-			me.handlePing(msg, addr)
+			me.Handle__ping(msg, addr)
 
 		// Si Hello on appelle notre handler prévu
 		case TypeHello:
 			fmt.Printf("hello recu de %s\n", addr)
-			me.handleHello(msg, addr)
+			me.Handle__hello(msg, addr)
 
 		case Error:
-			me.handleError(msg, addr)
+			me.Handle__error(msg, addr)
 
 		// Rien à faire, notre connexion UDP est valide
 		case TypeHelloReply:
@@ -562,17 +584,17 @@ func (me *Me) ListenLoop() {
 			fmt.Printf("Ok recu de %s pour l'Id %d\n", addr, msg.Id)
 
 		case TypeRootRequest:
-			me.handleRootRequest(msg, addr)
+			me.Handle__RootRequest(msg, addr)
 
 		case TypeDatumRequest:
-			me.handleDatumRequest(msg, addr)
+			me.Handle__DatumRequest(msg, addr)
 
 		case TypeRootReply: // 131
 			fmt.Printf("RootReply (131) reçu de %s\n", addr)
-			me.handleRootReply(msg, addr)
+			me.Handle__RootReply(msg, addr)
 
 		case TypeDatum: // 132
-			me.handleDatum(msg, addr)
+			me.Handle__Datum(msg, addr)
 
 		case TypeNoDatum: // 133
 			//me.handleNoDatum(msg, addr)
