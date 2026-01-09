@@ -201,7 +201,9 @@ func (me *Me) Handle__hello(req *Message, addr *net.UDPAddr) {
 	// on récupère le nom de l'emetteur (le nom est placé après les 4octets de bitmap représentants les extensions)
 	if len(req.Body) < 4 {
 		fmt.Println("le message Hello est incorrect")
-		return
+		
+		me.Handle__if__error(req, addr, "invalid hello format")
+    	return
 	}
 	sender := strings.Trim(string(req.Body[4:]), "\x00")
 	fmt.Printf("Vérification du Hello de : '%s'\n", sender)
@@ -210,7 +212,9 @@ func (me *Me) Handle__hello(req *Message, addr *net.UDPAddr) {
 	pubKeyBytes, err := client.Get__publicKey(me.ServerURL, sender)
 	if err != nil {
 		fmt.Printf("clef de %s introuvable\n", sender)
-		return
+		
+		me.Handle__if__error(req, addr, "sender's key is nowhere to be found")
+    	return
 	}
 	pubKey, _ := identity.Bytes__to__PublicKey(pubKeyBytes)
 
@@ -220,7 +224,10 @@ func (me *Me) Handle__hello(req *Message, addr *net.UDPAddr) {
 	// on vérifie
 	if !identity.Verify__signature(pubKey, dataToVerify, req.Signature) {
 		fmt.Printf("signature invalide recue de %s, message jeté\n", sender)
-		return
+		
+		// on avertit l'emetteur qu'il y a eu une erreur
+		me.Handle__if__error(req, addr, "bad signature") 
+    	return
 	}
 
 	fmt.Printf("signature de %s vérifiée\n", sender)
@@ -250,7 +257,7 @@ func (me *Me) Handle__hello(req *Message, addr *net.UDPAddr) {
 }
 
 // fonction qui gère la réception d'un ping
-func (me *Me) Handle__ping(req *Message, addr *net.UDPAddr) error {
+func (me *Me) Handle__ping(req *Message, addr *net.UDPAddr) {
 
 	// on cree la struct Message de la réponse
 	reply := Message{
@@ -263,11 +270,31 @@ func (me *Me) Handle__ping(req *Message, addr *net.UDPAddr) error {
 	data := reply.Serialize()
 
 	// on renvoie le OK à l'emetteur
-	_, err := me.Conn.WriteToUDP(data, addr)
-	return err
-
+	me.Conn.WriteToUDP(data, addr)
 
 	// MAJ DU TIMEOUT DE 5 MINUTES ////////////////////////////////////////////////////////////////////////////////////////////////
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+}
+
+// fonction qui envoie une erreur à une destination, en paramètre: la destination et le message Human-Readable
+func (me *Me) Handle__if__error(req *Message, addr *net.UDPAddr, errorMsg string) {
+
+	// on cree la struct Message de la réponse
+	reply := Message{
+		Id:   req.Id,
+		Type: Error,
+		Body: []byte(errorMsg),
+	}
+
+    // on transforme le message en chaine d'octets
+	data := reply.Serialize()
+
+	// on renvoie l'erreur à l'emetteur
+	me.Conn.WriteToUDP(data, addr)
+
+	//TIMEOUT DE 5 MINUTES ////////////////////////////////////////////////////////////////////////////////////////////////
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -311,10 +338,7 @@ func (me *Me) Handle__RootRequest(req *Message, addr *net.UDPAddr) {
 	reply.Signature = sig
 
 	// Envoi
-	_, err = me.Conn.WriteToUDP(reply.Serialize(), addr)
-	if err != nil {
-		fmt.Println("Erreur envoi RootReply:", err)
-	}
+	me.Conn.WriteToUDP(reply.Serialize(), addr)
 }
 
 // Handler pour les DatumRequest
@@ -322,7 +346,9 @@ func (me *Me) Handle__DatumRequest(req *Message, addr *net.UDPAddr) {
 	// par sécurité, on vérifie que la requête contient bien un hash de 32 octets
 	if len(req.Body) != 32 {
 		fmt.Printf("DatumRequest invalide de %s (taille body incorrecte)\n", addr)
-		return
+		
+		me.Handle__if__error(req, addr, "invalid hash size (must be 32 bytes) in DatumRequest")
+    	return
 	}
 
 	// On récupère le hash demandé
@@ -373,10 +399,13 @@ func (me *Me) Handle__DatumRequest(req *Message, addr *net.UDPAddr) {
 
 // Cette fonction reçoit la réponse à la requête de Root, et envoie une DatumRequest avec le hash reçu
 func (me *Me) Handle__RootReply(msg *Message, addr *net.UDPAddr) {
+
 	// Vérification de la taille (le hash doit faire 32 octets)
 	if len(msg.Body) < 32 {
 		fmt.Printf("RootReply invalide reçu de %s (taille < 32)\n", addr)
-		return
+		
+		me.Handle__if__error(req, addr, "invalid hash size (must be 32 bytes) in Rootreply")
+    	return
 	}
 
 	// On récupère le hash
@@ -396,10 +425,7 @@ func (me *Me) Handle__RootReply(msg *Message, addr *net.UDPAddr) {
 	var hashArray [32]byte
 	copy(hashArray[:], rootHash)
 
-	err := me.Send__DatumRequest(addr.String(), hashArray)
-	if err != nil {
-		fmt.Printf("Erreur envoi DatumRequest: %v\n", err)
-	}
+	me.Send__DatumRequest(addr.String(), hashArray)
 }
 
 func (me *Me) Handle__Datum(msg *Message, addr *net.UDPAddr) {
@@ -419,7 +445,9 @@ func (me *Me) Handle__Datum(msg *Message, addr *net.UDPAddr) {
 	localHash := sha256.Sum256(data)
 	if !bytes.Equal(remoteHash, localHash[:]) {
 		fmt.Printf("ALERTE : Données corrompues reçues de %s ! Hash incorrect.\n", addr)
-		return
+		
+		me.Handle__if__error(msg, addr, "hash mismatch (data corrupted) in Datum")
+    	return
 	}
 
 	fmt.Printf("Donnée vérifiée reçue (taille: %d octets). Analyse du type...\n", len(data))
@@ -602,6 +630,7 @@ func (me *Me) Listen__loop() {
 		// mauvais type
 		default:
 			fmt.Printf("type de message non géré : %d\n", msg.Type)
+			me.Handle__if__error(msg, addr, fmt.Sprintf("unknown message type: %d", msg.Type))
 		}
 	}
 }
