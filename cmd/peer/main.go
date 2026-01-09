@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log"
 	"time"
+	"crypto/ecdsa"
 
-	// Vos packages locaux
 	"project/pkg/client"
 	"project/pkg/filesystem"
 	"project/pkg/identity"
@@ -32,14 +32,35 @@ func main() {
 
 	fmt.Printf("\n=== LANCEMENT DU PEER '%s' SUR LE PORT %d ===\n", myPeerName, myUDPPort)
 
-	// --- 2. IDENTITÉ ET CRYPTOGRAPHIE ---
-	fmt.Println("[1/6] Génération de l'identité cryptographique...")
-	privateKey, err := identity.KeyGen()
-	if err != nil {
-		log.Fatal("Erreur critique (KeyGen) : ", err)
-	}
-	pubKeyBytes := identity.PublicKey__to__bytes(&privateKey.PublicKey)
+	// --- 2. IDENTITÉ (CLÉ PERSISTANTE UNIQUEMENT) ---
+	fmt.Println("[1/6] Chargement de l'identité...")
 
+	var privateKey *ecdsa.PrivateKey
+
+	// A. Chargement de la clé (PEM)
+	loadedKey, err := identity.LoadIdentity()
+
+	if err == nil {
+		fmt.Println(" -> Clé privée chargée (identity.pem).")
+		privateKey = loadedKey
+	} else {
+		fmt.Println(" -> Aucune clé trouvée. Génération...")
+		privateKey, err = identity.KeyGen()
+		if err != nil {
+			log.Fatal("Erreur génération clé : ", err)
+		}
+		
+		// Sauvegarde immédiate
+		if err := identity.SaveIdentity(privateKey); err != nil {
+			fmt.Printf("ATTENTION : Echec sauvegarde clé : %v\n", err)
+		} else {
+			fmt.Println(" -> Nouvelle clé sauvegardée.")
+		}
+	}
+
+	// Calcul de la clé publique pour la suite
+	pubKeyBytes := identity.PublicKey__to__bytes(&privateKey.PublicKey)
+	 
 	// --- 3. DIAGNOSTICS SERVEUR (Extrait de l'ancien Main) ---
 	fmt.Println("[2/6] Diagnostics connexion Serveur REST...")
 
@@ -81,7 +102,7 @@ func main() {
 
 	// --- 4. DÉMARRAGE DU MOTEUR P2P (UDP) ---
 	fmt.Println("[3/6] Démarrage du serveur UDP...")
-	me, err := p2p.New_communication(myUDPPort, privateKey, myPeerName, serverURL)
+	me, err := p2p.New__communication(myUDPPort, privateKey, myPeerName, serverURL)
 	if err != nil {
 		log.Fatal("Erreur critique (UDP) : ", err)
 	}
