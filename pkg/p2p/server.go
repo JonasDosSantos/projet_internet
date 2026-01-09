@@ -301,10 +301,10 @@ func (me *Me) Handle__if__error(req *Message, addr *net.UDPAddr, errorMsg string
 }
 
 // focntion qui gère les messages d'erreurs recus
-func (me *Me) Handle__error(msg *Message, addr *net.UDPAddr) {
-	errorMessage := string(msg.Body)
+func (me *Me) Handle__error(req *Message, addr *net.UDPAddr) {
+	errorMessage := string(req.Body)
 
-	fmt.Printf("Error recu de %s (Id: %d) :\n", addr, msg.Id)
+	fmt.Printf("Error recu de %s (Id: %d) :\n", addr, req.Id)
 	fmt.Printf(">> Message : %s\n", errorMessage)
 
 	// POUR LE MOMENT, ON NE RENVOIE JAMAIS D'ERREUR (mais on sait lire le message d'erreur de quelqu'un d'autre) ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -398,10 +398,10 @@ func (me *Me) Handle__DatumRequest(req *Message, addr *net.UDPAddr) {
 }
 
 // Cette fonction reçoit la réponse à la requête de Root, et envoie une DatumRequest avec le hash reçu
-func (me *Me) Handle__RootReply(msg *Message, addr *net.UDPAddr) {
+func (me *Me) Handle__RootReply(req *Message, addr *net.UDPAddr) {
 
 	// Vérification de la taille (le hash doit faire 32 octets)
-	if len(msg.Body) < 32 {
+	if len(req.Body) < 32 {
 		fmt.Printf("RootReply invalide reçu de %s (taille < 32)\n", addr)
 		
 		me.Handle__if__error(req, addr, "invalid hash size (must be 32 bytes) in Rootreply")
@@ -409,7 +409,7 @@ func (me *Me) Handle__RootReply(msg *Message, addr *net.UDPAddr) {
 	}
 
 	// On récupère le hash
-	rootHash := msg.Body[:32]
+	rootHash := req.Body[:32]
 	fmt.Printf(">>> ROOT HASH REÇU de %s : %x\n", addr, rootHash)
 
 	// C'est ici que la logique de téléchargement commence !
@@ -428,17 +428,17 @@ func (me *Me) Handle__RootReply(msg *Message, addr *net.UDPAddr) {
 	me.Send__DatumRequest(addr.String(), hashArray)
 }
 
-func (me *Me) Handle__Datum(msg *Message, addr *net.UDPAddr) {
+func (me *Me) Handle__Datum(req *Message, addr *net.UDPAddr) {
 	// 1. Validation de la structure du message
 	// Le body doit contenir au moins le Hash (32 octets) + 1 octet de Type de noeud
-	if len(msg.Body) <= 32 {
+	if len(req.Body) <= 32 {
 		fmt.Printf("Datum invalide (trop court) de %s\n", addr)
 		return
 	}
 
 	// 2. Extraction Hash et Données
-	remoteHash := msg.Body[:32]
-	data := msg.Body[32:] // Le reste, c'est le contenu du noeud (Merkle Node)
+	remoteHash := req.Body[:32]
+	data := req.Body[32:] // Le reste, c'est le contenu du noeud (Merkle Node)
 
 	// 3. VÉRIFICATION D'INTÉGRITÉ (CRITIQUE )
 	// On hash ce qu'on vient de recevoir pour vérifier que c'est bien ce qu'on a demandé
@@ -446,7 +446,7 @@ func (me *Me) Handle__Datum(msg *Message, addr *net.UDPAddr) {
 	if !bytes.Equal(remoteHash, localHash[:]) {
 		fmt.Printf("ALERTE : Données corrompues reçues de %s ! Hash incorrect.\n", addr)
 		
-		me.Handle__if__error(msg, addr, "hash mismatch (data corrupted) in Datum")
+		me.Handle__if__error(req, addr, "hash mismatch (data corrupted) in Datum")
     	return
 	}
 
