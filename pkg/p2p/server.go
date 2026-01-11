@@ -229,17 +229,11 @@ func (me *Me) Start__maintenance__loop() {
 	ticker := time.NewTicker(30 * time.Second)
 	// Le timer s'arrêtera lorsque la maintenance_loop s'éteindra
 	defer ticker.Stop()
-	counter := 0
 
 	for range ticker.C {
-		// On commence par envoyer un keepalive au serveur central
-		// On décide de lancer le keepalive toutes les (50*30s =) 25 minutes
-		counter++
-		if counter > 50 {
-			counter = 0
-			fmt.Println("Keep-alive : Envoi Hello au serveur central...")
-			me.Send__hello(me.ServerUDPAddr)
-		}
+		// On envoie un keepalive au serveur ttes les 30 secondes car il assure également le maintien du NAT
+		fmt.Println("Keep-alive : Envoi Hello au serveur central.")
+		me.Send__hello(me.ServerUDPAddr)
 
 		me.Mutex.Lock()
 		now := time.Now()
