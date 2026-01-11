@@ -24,8 +24,10 @@ type Me struct {
 	RootHash   [32]byte
 	Database   map[[32]byte][]byte
 
-	Sessions map[string]*PeerSession
-	Mutex    sync.Mutex
+	// On stocke l'adresse UDP du serveur, celles des peers, et on crée un Mutex pour éviter les conflits entre suppression et màj
+	Sessions      map[string]*PeerSession
+	ServerUDPAddr string
+	Mutex         sync.Mutex
 }
 
 // Structure pour suivre l'état d'un pair
@@ -85,13 +87,17 @@ func New__communication(port int, priv *ecdsa.PrivateKey, name string, serverURL
 		return nil, err
 	}
 
+	// Adresse UDP du serveur en dur
+	serverUDP := "81.194.30.229:8443"
+
 	// on renvoie nos infos dans la structure crée dans ce but
 	return &Me{
-		Conn:       conn,
-		PrivateKey: priv,
-		PeerName:   name,
-		ServerURL:  serverURL,
-		Sessions:   make(map[string]*PeerSession),
+		Conn:          conn,
+		PrivateKey:    priv,
+		PeerName:      name,
+		ServerURL:     serverURL,
+		ServerUDPAddr: serverUDP,
+		Sessions:      make(map[string]*PeerSession),
 	}, nil
 }
 
@@ -223,8 +229,18 @@ func (me *Me) Start__maintenance__loop() {
 	ticker := time.NewTicker(30 * time.Second)
 	// Le timer s'arrêtera lorsque la maintenance_loop s'éteindra
 	defer ticker.Stop()
+	counter := 0
 
 	for range ticker.C {
+		// On commence par envoyer un keepalive au serveur central
+		// On décide de lancer le keepalive toutes les (50*30s =) 25 minutes
+		counter++
+		if counter > 50 {
+			counter = 0
+			fmt.Println("Keep-alive : Envoi Hello au serveur central...")
+			me.Send__hello(me.ServerUDPAddr)
+		}
+
 		me.Mutex.Lock()
 		now := time.Now()
 
