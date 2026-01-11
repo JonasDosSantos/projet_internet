@@ -233,7 +233,7 @@ func (me *Me) Handle__NoDatum(req *Message, addr *net.UDPAddr) {
 	me.Mutex.Unlock()
 
 	if !exists || session.PublicKey == nil {
-		fmt.Printf("ALERTE: NoDatum reçu de %s, mais pair inconnu. Ignoré.\n", addr)
+		fmt.Printf("ALERTE: NoDatum reçu de %s, mais pair connu. Ignoré.\n", addr)
 		return
 	}
 

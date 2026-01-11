@@ -1,0 +1,5 @@
+Nathan : TO messages, + résolution derniers pbs
+Jonas : NAT traversal
+
+UI, UX, Diffie Hellman
+Sources, commentaires, organisation
