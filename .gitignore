@@ -17,3 +17,6 @@ identity.pem
 # Fichiers IDE (optionnel mais recommandé)
 .vscode/
 .idea/
+
+printtree.txt
+handler.txt

@@ -1,12 +1,10 @@
 package p2p
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"encoding/binary"
 	"fmt"
-	"sync"
-	"bytes"
-	"time"
 	"net"
 	"os"
 	"path/filepath"
@@ -40,8 +38,8 @@ type Me struct {
 	// On stocke l'adresse UDP du serveur, celles des peers, et on crée un Mutex pour éviter les conflits entre suppression et màj
 	// ainsi que les adresses IP et ports de chaque peer, associé à la dernière fois qu'on l'a "vu"
 	ServerUDPAddr string
-	Sessions map[string]*PeerSession
-	Mutex sync.Mutex
+	Sessions      map[string]*PeerSession
+	Mutex         sync.Mutex
 }
 
 // Structure pour suivre l'état d'un pair
@@ -73,11 +71,11 @@ func (me *Me) Load__file__system(nodes []filesystem.Node) {
 	}
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Nous avons fais le choix de dériver (très simplement) notre propre clef publique pour définir l'ID de nos messages
 func (me *Me) Generate__id__from__key() uint32 {
 
@@ -119,14 +117,14 @@ func New__communication(port int, priv *ecdsa.PrivateKey, name string, serverURL
 
 	// on renvoie nos infos dans la structure crée dans ce but
 	return &Me{
-		Conn: conn,
-		PrivateKey: priv,
-		PeerName: name,
-		ServerURL: serverURL,
+		Conn:            conn,
+		PrivateKey:      priv,
+		PeerName:        name,
+		ServerURL:       serverURL,
 		PendingRequests: make(map[[32]byte]chan []byte),
-       	Database: make(map[[32]byte][]byte),
-		ServerUDPAddr: serverUDP,
-		Sessions:      make(map[string]*PeerSession),
+		Database:        make(map[[32]byte][]byte),
+		ServerUDPAddr:   serverUDP,
+		Sessions:        make(map[string]*PeerSession),
 	}, nil
 }
 
@@ -375,7 +373,7 @@ func (me *Me) Listen__loop() {
 			// On regarde si Download_tree attend ce hash via un channel
 			me.PendingLock.Lock()
 			ch, exists := me.PendingRequests[receivedHash]
-			
+
 			if exists {
 				// On envoie la donnée dans le channel (non bloquant)
 				select {
@@ -398,7 +396,6 @@ func (me *Me) Listen__loop() {
 	}
 }
 
-
 func (me *Me) Download_tree(destAddr string, rootHash [32]byte) {
 
 	// on initialise un waitgroup
@@ -413,10 +410,10 @@ func (me *Me) Download_tree(destAddr string, rootHash [32]byte) {
 
 	// on appelle notre fonction de téléchargement
 	me.Download_recursively(destAddr, rootHash, &wg, semaphore)
-	
+
 	// on attends que notre WaitGroup termine
 	wg.Wait()
-	fmt.Println("téléchargement terminé\n")
+	fmt.Println("téléchargement terminé")
 }
 
 func (me *Me) Download_recursively(destAddr string, hash [32]byte, wg *sync.WaitGroup, semaphore chan struct{}) {
@@ -435,8 +432,8 @@ func (me *Me) Download_recursively(destAddr string, hash [32]byte, wg *sync.Wait
 	}
 
 	// on prend 1 "ticket" pour notre semaphore, si c'est plein, on attend
-	semaphore <- struct{}{} 
-	
+	semaphore <- struct{}{}
+
 	// on rend le "ticket" à la fin de la fonction
 	defer func() { <-semaphore }()
 
@@ -464,7 +461,7 @@ func (me *Me) Download_recursively(destAddr string, hash [32]byte, wg *sync.Wait
 
 	// si on a recu ce qu'on voualit
 	case receivedData := <-respChan:
-		
+
 		// on prends le verrou sur la Database et on y écrit les data
 		me.DbLock.Lock()
 		me.Database[hash] = receivedData
@@ -490,8 +487,8 @@ func (me *Me) Download_recursively(destAddr string, hash [32]byte, wg *sync.Wait
 			for i := 0; i < count; i++ {
 				// on copie chaque hash des enfants
 				var childHash [32]byte
-				copy(childHash[:], entriesData[i*64+32 : (i+1)*64])
-				
+				copy(childHash[:], entriesData[i*64+32:(i+1)*64])
+
 				// on va lancer récursivement un télechargement sur cet enfant donc on incremente notre WaitGroup
 				wg.Add(1)
 
@@ -501,18 +498,18 @@ func (me *Me) Download_recursively(destAddr string, hash [32]byte, wg *sync.Wait
 
 		// si c'est un BigNode ou un BigDirectory (meme principe)
 		case filesystem.TypeBig, filesystem.TypeBigDirectory:
-			
+
 			// on coupe le type
 			hashesData := receivedData[1:]
 
 			// on va parcourir les enfants
 			count := len(hashesData) / 32
-			
+
 			for i := 0; i < count; i++ {
 				// on copie chaque hash des enfants
 				var childHash [32]byte
-				copy(childHash[:], hashesData[i*32 : (i+1)*32])
-				
+				copy(childHash[:], hashesData[i*32:(i+1)*32])
+
 				// on va lancer récursivement un télechargement sur cet enfant donc on incremente notre WaitGroup
 				wg.Add(1)
 
@@ -534,187 +531,100 @@ func (me *Me) Download_recursively(destAddr string, hash [32]byte, wg *sync.Wait
 	}
 }
 
-/*
-
-// fonction pour print une arborescence de fichier (celle actuellement dans notre variable Database)
-func (me *Me) PrintTree(rootHash [32]byte) {
-
-	// on vérifie que la DB n'est pas vide ie qu'il y a bien quelque chose a print
-	if len(me.Database) == 0 {
-		fmt.Println("notre DB est vide")
-		return
-	}
-
-	// on appelle notre fonction d'affichage
-	me.recursivePrint(rootHash, "")
-}
-
-func (me *Me) recursivePrint(nodeHash [32]byte, prefix string) {
-
-	// on récupère toutes les data du hash voulu dans notre DB
-	data, exists := me.Database[nodeHash]
-
-	// s'il n'existe pas 
-	if !exists {
-		fmt.Printf("%s❌ [MANQUANT] Hash: %x...\n", prefix, nodeHash[:4])
-		return
-	}
-
-	// 2. Identification du type
-	nodeType := data[0]
-
-	switch nodeType {
-
-	case filesystem.TypeDirectory:
-		// TYPE 1 : Dossier standard
-		// Structure : [Type 1o] + [ [Nom 32o] + [Hash 32o] ] * N
-		
-		entriesData := data[1:]
-		entrySize := 64
-		count := len(entriesData) / entrySize
-
-		for i := 0; i < count; i++ {
-			start := i * entrySize
-			
-			// Extraction et nettoyage du nom (on enlève les 0x00 inutiles)
-			nameBytes := entriesData[start : start+32]
-			name := string(bytes.Trim(nameBytes, "\x00"))
-
-			// Extraction du hash de l'enfant
-			var childHash [32]byte
-			copy(childHash[:], entriesData[start+32:start+64])
-
-			// On regarde ce qu'est cet enfant pour savoir comment l'afficher
-			childData, childExists := me.Database[childHash]
-
-			if !childExists {
-				// On affiche le nom mais on signale que le contenu est absent
-				fmt.Printf("%s├── ❓ %s (Contenu non téléchargé)\n", prefix, name)
-				continue
-			}
-
-			childType := childData[0]
-
-			// Si l'enfant est un dossier (ou un gros dossier), on l'affiche comme tel et on descend
-			if childType == filesystem.TypeDirectory || childType == filesystem.TypeBigDirectory {
-				fmt.Printf("%s├── 📁 %s/\n", prefix, name)
-				me.recursivePrint(childHash, prefix+"│   ")
-			} else {
-				// Sinon c'est un fichier (Chunk ou BigFile), on l'affiche juste
-				fmt.Printf("%s├── 📄 %s\n", prefix, name)
-			}
-		}
-
-	case filesystem.TypeBigDirectory:
-		// TYPE 3 : Gros Dossier (Liste de hashs)
-		// Structure : [Type 1o] + [Hash 32o] * N
-		// Ce n'est pas un sous-dossier visuel, c'est la suite du contenu du dossier parent.
-		// On garde donc le MÊME préfixe.
-		
-		hashesData := data[1:]
-		hashSize := 32
-		count := len(hashesData) / hashSize
-
-		for i := 0; i < count; i++ {
-			var childHash [32]byte
-			copy(childHash[:], hashesData[i*hashSize:(i+1)*hashSize])
-			
-			// Appel récursif avec le même niveau d'indentation
-			me.recursivePrint(childHash, prefix)
-		}
-
-	// Les types 0 (Chunk) et 2 (BigFile) ne sont pas traités ici 
-	// car ils sont affichés lors du parcours de leur parent (TypeDirectory).
-	}
-}
-
-*/
-
 // fonction qui reconstruit tout un système de fichier à partir de notre Database
+// cette fonction ne crée que l'architecture du file system et délègue le reste (écriture des chunks) à un autre fonction
+// nodeHash est le noeud qu'on traite actuellement
+// currentPath est le lieu où on se trouve dans l'arborescence
 func (me *Me) Rebuild__file__system(nodeHash [32]byte, currentPath string) error {
-	
-	// on prends un verrou sur la DB pour copié les data du node souhaité
+
+	// on prends un verrou sur la DB pour copier les data du node souhaité
 	me.DbLock.Lock()
 	data, exists := me.Database[nodeHash]
 	me.DbLock.Unlock()
 
-	// si le neoud n'existe pas 
+	// si le neoud n'existe pas
 	if !exists {
 		return fmt.Errorf("noeud manquant dans la base de données : %x", nodeHash[:4])
 	}
 
-	// 2. Identification du type de noeud
+	// on récupère le type du noeud
 	nodeType := data[0]
 
+	// switch/case sur le type
 	switch nodeType {
 
-	// --- CAS DOSSIER (Type 1) ---
+	// SI c'est un Directory
 	case filesystem.TypeDirectory:
-		// On crée le dossier physique sur le disque
-		// MkdirAll ne renvoie pas d'erreur si le dossier existe déjà
+
+		// on crée le dossier sur le disque en local
 		if err := os.MkdirAll(currentPath, 0755); err != nil {
 			return fmt.Errorf("erreur création dossier %s: %v", currentPath, err)
 		}
 
-		// Lecture des entrées : [Nom (32o)] + [Hash (32o)]
+		// lecture de toutes les entrées : [Nom (32o)] + [Hash (32o)]
+
+		// on coupe le type
 		entriesData := data[1:]
+
+		// on parcourt toutes les entrées
 		entrySize := 64
 		count := len(entriesData) / entrySize
 
 		for i := 0; i < count; i++ {
 			start := i * entrySize
-			
-			// Extraction et nettoyage du nom (suppression des 0x00)
+
+			// suppréssion du padding sur le nom
 			nameBytes := entriesData[start : start+32]
 			name := string(bytes.Trim(nameBytes, "\x00"))
 
-			// Extraction du hash de l'enfant
+			// on récupère le hash
 			var childHash [32]byte
 			copy(childHash[:], entriesData[start+32:start+64])
 
-			// Construction du chemin complet pour l'enfant (ex: "downloads/images/vacances.jpg")
+			// on concaténe le nom de l'enfant a la fin du filepath
 			childPath := filepath.Join(currentPath, name)
 
-			// Appel récursif
+			// appel récursif pour continuer à construire
 			if err := me.Rebuild__file__system(childHash, childPath); err != nil {
 				return err
 			}
 		}
 
-	// --- CAS GROS DOSSIER (Type 3) ---
+	// Si c'est un BigDirectory
 	case filesystem.TypeBigDirectory:
-		// Ce noeud contient une liste de hashs qui pointent vers la suite du contenu du dossier.
-		// IMPORTANT : On garde 'currentPath' tel quel, on ne descend pas dans un sous-dossier.
-		
+
+		// on coupe le type
 		hashesData := data[1:]
+
+		// on va parcourir les entrees
 		count := len(hashesData) / 32
 
 		for i := 0; i < count; i++ {
+			// on récupère le hash de l'enfant
 			var childHash [32]byte
 			copy(childHash[:], hashesData[i*32:(i+1)*32])
-			
-			// Récursion avec le MÊME chemin courant
+
+			// appel récursif sans changer le path car on ne s'est pas "déplacer" dans l'arborescence
 			if err := me.Rebuild__file__system(childHash, currentPath); err != nil {
 				return err
 			}
 		}
 
-	// --- CAS FICHIER (Type 0 ou 2) ---
+	// si c'est un fichier (chunk ou BigNode, même logique)
 	case filesystem.TypeChunk, filesystem.TypeBig:
-		// On crée le fichier sur le disque
-		// os.Create écrase le fichier s'il existe déjà
-		f, err := os.Create(currentPath)
+
+		// on crée le fichier en local (ou on l'écrase)
+		file, err := os.Create(currentPath)
 		if err != nil {
 			return fmt.Errorf("erreur création fichier %s: %v", currentPath, err)
 		}
-		defer f.Close()
+		defer file.Close()
 
-		// On appelle la fonction helper pour remplir le contenu
-		// On passe le descripteur de fichier 'f' pour écrire dedans au fur et à mesure
-		if err := me.rebuild__file__content(nodeHash, f); err != nil {
+		// on appelle notre fonction dédiée au remplissage des fichiers
+		if err := me.rebuild__file__content(nodeHash, file); err != nil {
 			return err
 		}
-	
+
 	default:
 		return fmt.Errorf("type de noeud inconnu : %d", nodeType)
 	}
@@ -722,40 +632,54 @@ func (me *Me) Rebuild__file__system(nodeHash [32]byte, currentPath string) error
 	return nil
 }
 
-// Fonction auxiliaire pour écrire le contenu d'un fichier (récursif pour TypeBig)
-func (me *Me) rebuild__file__content(hash [32]byte, f *os.File) error {
-	
+// fonction pour remplir les fichiers (appelée par Rebuild__file__system)
+func (me *Me) rebuild__file__content(hash [32]byte, file *os.File) error {
+
+	// on prend le verrou sur la DB
 	me.DbLock.Lock()
 	data, exists := me.Database[hash]
 	me.DbLock.Unlock()
 
+	// si le chunk qu'on cherche n'existe pas (peu de chance d'arriver au vu de notre implémentation)
 	if !exists {
 		return fmt.Errorf("chunk manquant : %x", hash[:4])
 	}
 
+	// on récupère le type du node (soit chunk soit BigNode)
 	nodeType := data[0]
 
-	if nodeType == filesystem.TypeChunk {
-		// FEUILLE : C'est de la donnée brute
-		// On écrit tout sauf le premier octet (qui est le Type)
-		_, err := f.Write(data[1:])
+	// si c'est un chunk
+	switch nodeType {
+
+	// si on est sur une feuille
+	case filesystem.TypeChunk:
+		// on écrit tout sauf le premier octet (le type)
+		_, err := file.Write(data[1:])
 		return err
 
-	} else if nodeType == filesystem.TypeBig {
-		// NOEUD INTERMÉDIAIRE : Liste de hashs d'enfants
+	// si c'est un BigNode
+	case filesystem.TypeBig:
+
+		// on coupe le type
 		hashesData := data[1:]
+
+		// on va parcourir tout les enfants
 		count := len(hashesData) / 32
-		
+
 		for i := 0; i < count; i++ {
+			// on récupère le hash de l'enfant
 			var childHash [32]byte
 			copy(childHash[:], hashesData[i*32:(i+1)*32])
-			
-			// Récursion : on écrit la suite dans le même fichier ouvert 'f'
-			if err := me.rebuild__file__content(childHash, f); err != nil {
+
+			// appel récursif pour continuer à écrire à la suite
+			if err := me.rebuild__file__content(childHash, file); err != nil {
 				return err
 			}
 		}
+
+	default:
+		return fmt.Errorf("type de noeud inconnu (pas forcément inconnu mais problématique) : %d", nodeType)
 	}
-	
+
 	return nil
 }
