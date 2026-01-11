@@ -49,7 +49,7 @@ func main() {
 		if err != nil {
 			log.Fatal("Erreur génération clé : ", err)
 		}
-		
+
 		// Sauvegarde immédiate
 		if err := identity.SaveIdentity(privateKey); err != nil {
 			fmt.Printf("ATTENTION : Echec sauvegarde clé : %v\n", err)
@@ -60,7 +60,7 @@ func main() {
 
 	// Calcul de la clé publique pour la suite
 	pubKeyBytes := identity.PublicKey__to__bytes(&privateKey.PublicKey)
-	 
+
 	// --- 3. DIAGNOSTICS SERVEUR ---
 	fmt.Println("[2/6] Diagnostics connexion Serveur REST...")
 
@@ -153,11 +153,11 @@ func main() {
 
 		// 3. Attente active de la réponse (RootHash)
 		fmt.Println(" ⏳ Attente de la réception du RootHash...")
-		
+
 		timeout := time.After(5 * time.Second)
 		ticker := time.NewTicker(200 * time.Millisecond)
 		defer ticker.Stop()
-		
+
 		rootReceived := false
 
 		for {
@@ -180,10 +180,9 @@ func main() {
 			// 4. Téléchargement des données (remplit la Database)
 			fmt.Println("\n--- DÉBUT DU TÉLÉCHARGEMENT DE L'ARBRE ---")
 			me.Download_tree(targetAddr, me.RootHash)
-			
+
 			// 5. Affichage de l'arbre reconstruit
 			fmt.Println("\n--- ARBORESCENCE RECONSTRUITE (DEPUIS DATABASE) ---")
-			me.PrintTree(me.RootHash)
 			fmt.Println("---------------------------------------------------")
 
 			// 6. Écriture physique sur le disque (NOUVEAU)
@@ -198,9 +197,8 @@ func main() {
 				fmt.Println("✅ SUCCÈS ! Système de fichiers reconstruit.")
 			}
 		}
-	
-	FinScenario:
 
+	FinScenario:
 	} else {
 		fmt.Println("\n[INFO] Pas de cible P2P spécifiée. Le peer attend les connexions.")
 	}

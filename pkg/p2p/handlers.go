@@ -216,3 +216,57 @@ func (me *Me) Handle__DatumRequest(req *Message, addr *net.UDPAddr) {
 		}
 	}
 }
+
+func (me *Me) Handle__NoDatum(req *Message, addr *net.UDPAddr) {
+	// Validation de la taille
+	if len(req.Body) != 32 {
+		fmt.Printf("NoDatum invalide reçu de %s (taille != 32)\n", addr)
+		me.Handle__if__error(req, addr, "invalid NoDatum size")
+		return
+	}
+
+	missingHash := req.Body[:32]
+
+	// récupération de la clé publique via la Session
+	me.Mutex.Lock()
+	session, exists := me.Sessions[addr.String()]
+	me.Mutex.Unlock()
+
+	if !exists || session.PublicKey == nil {
+		fmt.Printf("ALERTE: NoDatum reçu de %s, mais pair inconnu. Ignoré.\n", addr)
+		return
+	}
+
+	// Vérification de la signature
+	dataToVerify := req.Serialize()[:7+len(req.Body)]
+
+	if !identity.Verify__signature(session.PublicKey, dataToVerify, req.Signature) {
+		fmt.Printf("ALERTE: Signature invalide pour NoDatum de %s\n", addr)
+		me.Handle__if__error(req, addr, "bad signature on NoDatum")
+		return
+	}
+
+	// 4. LOGIQUE MÉTIER (ADAPTÉE AUX CHANNELS)
+	fmt.Printf("Le peer %s ne possède pas le hash : %x\n", addr, missingHash[:5])
+
+	// On prépare la clé pour la chercher dans la map
+	var hashArray [32]byte
+	copy(hashArray[:], missingHash)
+
+	// On touche à la map partagée, donc on lock
+	me.PendingLock.Lock()
+	ch, waiting := me.PendingRequests[hashArray]
+
+	if waiting {
+		// Quelqu'un attendait ce fichier via un channel
+		// On supprime l'entrée de la map
+		delete(me.PendingRequests, hashArray)
+
+		// On ferme le channel
+		// Cela va envoyer une valeur "vide" (nil) instantanément à Download_recursively.
+		// Cela évite d'attendre le timeout de 10s pour rien
+		close(ch)
+		fmt.Printf("-> Signalement d'échec envoyé au processus de téléchargement.\n")
+	}
+	me.PendingLock.Unlock()
+}

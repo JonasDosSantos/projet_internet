@@ -386,7 +386,7 @@ func (me *Me) Listen__loop() {
 			me.PendingLock.Unlock()
 
 		case TypeNoDatum: // 133
-			//me.handleNoDatum(msg, addr)
+			me.Handle__NoDatum(msg, addr)
 
 		// mauvais type
 		default:
@@ -461,6 +461,13 @@ func (me *Me) Download_recursively(destAddr string, hash [32]byte, wg *sync.Wait
 
 	// si on a recu ce qu'on voualit
 	case receivedData := <-respChan:
+
+		// Si le channel a été fermé (par Handle__NoDatum), on reçoit une donnée vide.
+		// On arrête le traitement pour ce noeud.
+		if len(receivedData) == 0 {
+			fmt.Printf("Abandon branche (NoDatum) pour le hash %x\n", hash[:4])
+			return
+		}
 
 		// on prends le verrou sur la Database et on y écrit les data
 		me.DbLock.Lock()
@@ -537,7 +544,7 @@ func (me *Me) Download_recursively(destAddr string, hash [32]byte, wg *sync.Wait
 // currentPath est le lieu où on se trouve dans l'arborescence
 func (me *Me) Rebuild__file__system(nodeHash [32]byte, currentPath string) error {
 
-	// on prends un verrou sur la DB pour copier les data du node souhaité
+	// on prend un verrou sur la DB pour copier les data du node souhaité
 	me.DbLock.Lock()
 	data, exists := me.Database[nodeHash]
 	me.DbLock.Unlock()
