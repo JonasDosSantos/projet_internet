@@ -25,14 +25,16 @@ type Me struct {
 	Database   map[[32]byte][]byte
 
 	// On stocke l'adresse UDP du serveur, celles des peers, et on crée un Mutex pour éviter les conflits entre suppression et màj
-	Sessions      map[string]*PeerSession
+	// ainsi que les adresses IP et ports de chaque peer, associé à la dernière fois qu'on l'a "vu"
 	ServerUDPAddr string
+	Sessions      map[string]*PeerSession
 	Mutex         sync.Mutex
 }
 
 // Structure pour suivre l'état d'un pair
 type PeerSession struct {
-	LastSeen time.Time
+	LastSeen  time.Time
+	PublicKey *ecdsa.PublicKey
 }
 
 // Ajoutez cette méthode utilitaire pour charger l'arbre généré par file.go dans la structure Me

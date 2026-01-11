@@ -9,6 +9,7 @@ import (
 	"project/pkg/filesystem"
 	"project/pkg/identity"
 	"strings"
+	"time"
 )
 
 // HANDLERS DE GESTION LORS DE LA RECEPTION DE Hello, Ping ET Error
@@ -19,9 +20,9 @@ func (me *Me) Handle__hello(req *Message, addr *net.UDPAddr) {
 	// on récupère le nom de l'emetteur (le nom est placé après les 4octets de bitmap représentants les extensions)
 	if len(req.Body) < 4 {
 		fmt.Println("le message Hello est incorrect")
-		
+
 		me.Handle__if__error(req, addr, "invalid hello format")
-    	return
+		return
 	}
 	sender := strings.Trim(string(req.Body[4:]), "\x00")
 	fmt.Printf("Vérification du Hello de : '%s'\n", sender)
@@ -30,9 +31,9 @@ func (me *Me) Handle__hello(req *Message, addr *net.UDPAddr) {
 	pubKeyBytes, err := client.Get__publicKey(me.ServerURL, sender)
 	if err != nil {
 		fmt.Printf("clef de %s introuvable\n", sender)
-		
+
 		me.Handle__if__error(req, addr, "sender's key is nowhere to be found")
-    	return
+		return
 	}
 	pubKey, _ := identity.Bytes__to__PublicKey(pubKeyBytes)
 
@@ -42,13 +43,21 @@ func (me *Me) Handle__hello(req *Message, addr *net.UDPAddr) {
 	// on vérifie
 	if !identity.Verify__signature(pubKey, dataToVerify, req.Signature) {
 		fmt.Printf("signature invalide recue de %s, message jeté\n", sender)
-		
+
 		// on avertit l'emetteur qu'il y a eu une erreur
-		me.Handle__if__error(req, addr, "bad signature") 
-    	return
+		me.Handle__if__error(req, addr, "bad signature")
+		return
 	}
 
 	fmt.Printf("signature de %s vérifiée\n", sender)
+
+	// Sauvegarde de la clé publique liée à cette IP pour plus tard (nodatum)
+	me.Mutex.Lock()
+	me.Sessions[addr.String()] = &PeerSession{
+		LastSeen:  time.Now(),
+		PublicKey: pubKey,
+	}
+	me.Mutex.Unlock()
 
 	// reponse
 
@@ -67,11 +76,6 @@ func (me *Me) Handle__hello(req *Message, addr *net.UDPAddr) {
 	sig, _ := identity.Sign(me.PrivateKey, unsignedData)
 	reply.Signature = sig
 	me.Conn.WriteToUDP(reply.Serialize(), addr)
-
-	//TIMEOUT DE 5 MINUTES ////////////////////////////////////////////////////////////////////////////////////////////////
-	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 }
 
 // fonction qui gère la réception d'un ping
@@ -89,11 +93,6 @@ func (me *Me) Handle__ping(req *Message, addr *net.UDPAddr) {
 
 	// on renvoie le OK à l'emetteur
 	me.Conn.WriteToUDP(data, addr)
-
-	// MAJ DU TIMEOUT DE 5 MINUTES ////////////////////////////////////////////////////////////////////////////////////////////////
-	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 }
 
 // fonction qui envoie une erreur à une destination, en paramètre: la destination et le message Human-Readable
@@ -106,7 +105,7 @@ func (me *Me) Handle__if__error(req *Message, addr *net.UDPAddr, errorMsg string
 		Body: []byte(errorMsg),
 	}
 
-    // on transforme le message en chaine d'octets
+	// on transforme le message en chaine d'octets
 	data := reply.Serialize()
 
 	// on renvoie l'erreur à l'emetteur
@@ -155,9 +154,9 @@ func (me *Me) Handle__DatumRequest(req *Message, addr *net.UDPAddr) {
 	// par sécurité, on vérifie que la requête contient bien un hash de 32 octets
 	if len(req.Body) != 32 {
 		fmt.Printf("DatumRequest invalide de %s (taille body incorrecte)\n", addr)
-		
+
 		me.Handle__if__error(req, addr, "invalid hash size (must be 32 bytes) in DatumRequest")
-    	return
+		return
 	}
 
 	// On récupère le hash demandé
@@ -170,12 +169,12 @@ func (me *Me) Handle__DatumRequest(req *Message, addr *net.UDPAddr) {
 	if found {
 		// on vérifie que les data qu'on a dans notre "Base de Données" correspond bien au hash demandé
 		verificationHash := sha256.Sum256(data)
-		
+
 		if !bytes.Equal(verificationHash[:], requestedHash[:]) {
 			fmt.Printf("donnée corrompue en mémoire interne %x\n", requestedHash[:5])
 
 			// on considère qu'on a pas trouvé la donnée
-			found = false 
+			found = false
 		}
 	}
 
@@ -223,9 +222,9 @@ func (me *Me) Handle__RootReply(req *Message, addr *net.UDPAddr) {
 	// vérification de sécurité (taille du hash)
 	if len(req.Body) < 32 {
 		fmt.Printf("RootReply invalide reçu de %s (taille < 32)\n", addr)
-		
+
 		me.Handle__if__error(req, addr, "invalid hash size (must be 32 bytes) in Rootreply")
-    	return
+		return
 	}
 
 	// on récupère le hash
@@ -260,10 +259,10 @@ func (me *Me) Handle__Datum(req *Message, addr *net.UDPAddr) {
 	localHash := sha256.Sum256(data)
 	if !bytes.Equal(remoteHash, localHash[:]) {
 		fmt.Printf("données corrompues reçues de %s, hash incorrect.\n", addr)
-		
+
 		// on renvoie un message d'erreur human-readable
 		me.Handle__if__error(req, addr, "hash mismatch (data corrupted) in Datum")
-    	return
+		return
 	}
 
 	// on récupère le type du noeud. c'est le premier octets des data
@@ -316,33 +315,33 @@ func (me *Me) Handle__Datum(req *Message, addr *net.UDPAddr) {
 			go me.Send__DatumRequest(addr.String(), childHash)
 		}
 
-		case filesystem.TypeBig, filesystem.TypeBigDirectory:
-			// c'est un BigDIrectory ou un BigNode, on traite de la même façon
+	case filesystem.TypeBig, filesystem.TypeBigDirectory:
+		// c'est un BigDIrectory ou un BigNode, on traite de la même façon
 
-			// on enlève le type du départ
-			hashesData := data[1:]
+		// on enlève le type du départ
+		hashesData := data[1:]
 
-			// nombre d'enfants
-			count := len(hashesData) / 32
+		// nombre d'enfants
+		count := len(hashesData) / 32
 
-			// on boucle sur chacun d'eux
-			for i := 0; i < count; i++ {
+		// on boucle sur chacun d'eux
+		for i := 0; i < count; i++ {
 
-				// debut de "l'offset"
-				start := i * 32
-				childHashSlice := hashesData[start : start+32]
-				var childHash [32]byte
-				copy(childHash[:], childHashSlice)
+			// debut de "l'offset"
+			start := i * 32
+			childHashSlice := hashesData[start : start+32]
+			var childHash [32]byte
+			copy(childHash[:], childHashSlice)
 
-				// on demande ce morceau
-				go me.Send__DatumRequest(addr.String(), childHash)
-			}
-
-		// si le type du noeud est inconnu, on avertit l'emetteur
-		default:
-			fmt.Printf("type de noeud inconnu %d\n", nodeType)
-			me.Handle__if__error(req, addr, "node type unknown in Datum")
+			// on demande ce morceau
+			go me.Send__DatumRequest(addr.String(), childHash)
 		}
+
+	// si le type du noeud est inconnu, on avertit l'emetteur
+	default:
+		fmt.Printf("type de noeud inconnu %d\n", nodeType)
+		me.Handle__if__error(req, addr, "node type unknown in Datum")
+	}
 }
 
 // Petite fonction utilitaire pour l'affichage
@@ -352,38 +351,3 @@ func min(a, b int) int {
 	}
 	return b
 }
-
-// Dans pkg/p2p/server.go
-
-/*
-func (me *Me) handleNoDatum(msg *Message, addr *net.UDPAddr) {
-	// 1. Validation de la taille (Doit contenir juste le hash de 32 octets)
-	if len(msg.Body) != 32 {
-		fmt.Printf("NoDatum invalide reçu de %s (taille body != 32)\n", addr)
-		return
-	}
-
-	// 2. Extraction du hash manquant
-	missingHash := msg.Body[:32]
-
-	// 3. VÉRIFICATION DE LA SIGNATURE (OBLIGATOIRE - Section 4.3)
-	// Pour vérifier la signature, il faut la clé publique de l'émetteur (addr).
-	// Idéalement, on devrait l'avoir stockée dans une map `Sessions` lors du Hello.
-	// Ici, on va faire une vérification simplifiée : on vérifie juste que la signature est présente.
-
-	dataToVerify := msg.Serialize()[:7+len(msg.Body)] // Tout le message jusqu'à la fin du body
-
-	// Note : Dans un code complet, il faut retrouver la pubKey associée à 'addr'
-	// et appeler identity.Verify__signature(pubKey, dataToVerify, msg.Signature)
-	if len(msg.Signature) != 64 {
-		fmt.Printf("ALERTE: NoDatum non signé (ou mal signé) reçu de %s. Ignoré.\n", addr)
-		return
-	}
-
-	// 4. Logique métier
-	fmt.Printf("⚠️  ÉCHEC : Le peer %s ne possède pas le hash demandé : %x\n", addr, missingHash[:5])
-	fmt.Println("    -> Le téléchargement de cette branche est interrompu.")
-
-	// (Extension possible : Ici, on pourrait déclencher une recherche vers un AUTRE peer)
-}
-*/
