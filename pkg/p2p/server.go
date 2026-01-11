@@ -7,6 +7,8 @@ import (
 	"net"
 	"project/pkg/filesystem"
 	"project/pkg/identity"
+	"sync"
+	"time"
 )
 
 // EN PLUS DU TIMEOUT IL FAUT FAIRE UN FONCTION QUI VERIFIE SI LE PEER QUI VIENT DE NOUS ENVOYER UN MESSAGE ETAIT DANS NOTRE LISTE DE " CONNEXION COURANTE" ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -21,6 +23,14 @@ type Me struct {
 	ServerURL  string
 	RootHash   [32]byte
 	Database   map[[32]byte][]byte
+
+	Sessions map[string]*PeerSession
+	Mutex    sync.Mutex
+}
+
+// Structure pour suivre l'état d'un pair
+type PeerSession struct {
+	LastSeen time.Time
 }
 
 // Ajoutez cette méthode utilitaire pour charger l'arbre généré par file.go dans la structure Me
@@ -81,6 +91,7 @@ func New__communication(port int, priv *ecdsa.PrivateKey, name string, serverURL
 		PrivateKey: priv,
 		PeerName:   name,
 		ServerURL:  serverURL,
+		Sessions:   make(map[string]*PeerSession),
 	}, nil
 }
 
@@ -189,6 +200,54 @@ func (me *Me) Send__DatumRequest(destAddr string, hash [32]byte) error {
 	return err
 }
 
+// GESTION KEEPALIVE ET TIMEOUT ENTRE PEER
+// On ne veut pas qu'une adresse dont on met à jour le "LastSeen" soit supprimée simultanément, d'où l'usage d'un mutex
+
+// Met à jour l'heure de dernier contact avec une adresse
+func (me *Me) Update__last__seen(addrStr string) {
+	me.Mutex.Lock()
+	defer me.Mutex.Unlock()
+
+	if session, exists := me.Sessions[addrStr]; exists {
+		session.LastSeen = time.Now()
+	} else {
+		// Nouvelle session, on l'ajoute
+		me.Sessions[addrStr] = &PeerSession{
+			LastSeen: time.Now(),
+		}
+	}
+}
+
+func (me *Me) Start__maintenance__loop() {
+	// On vérifie toutes les 30 secondes
+	ticker := time.NewTicker(30 * time.Second)
+	// Le timer s'arrêtera lorsque la maintenance_loop s'éteindra
+	defer ticker.Stop()
+
+	for range ticker.C {
+		me.Mutex.Lock()
+		now := time.Now()
+
+		for addr, session := range me.Sessions {
+			diff := now.Sub(session.LastSeen)
+
+			// Après 5 minutes : expiration
+			if diff > 5*time.Minute {
+				fmt.Printf("Timeout : Session expirée avec %s (inactif depuis %s)\n", addr, diff)
+				delete(me.Sessions, addr)
+				continue
+			}
+
+			// Après 4 minutes : keepalive
+			if diff > 4*time.Minute {
+				fmt.Printf("Keep-alive : Envoi Ping automatique à %s\n", addr)
+				// On lance le ping via la fonction "send__ping" dans une goroutine pour ne pas bloquer le mutex
+				go me.Send__ping(addr)
+			}
+		}
+		me.Mutex.Unlock()
+	}
+}
 
 // BOUCLE D'ECOUTE
 
@@ -200,6 +259,9 @@ func (me *Me) Listen__loop() {
 
 	fmt.Printf("on écoute sur le port %s\n", me.Conn.LocalAddr())
 
+	// On lance la maintenant__loop qui gère les timeouts et keepalives
+	go me.Start__maintenance__loop()
+
 	// boucle infinie
 	for {
 		// n = taille
@@ -209,6 +271,9 @@ func (me *Me) Listen__loop() {
 			fmt.Println("erreur lecture sur le port:", err)
 			continue
 		}
+
+		// On met à jour la session dès qu'on reçoit n'importe quel octet valide
+		me.Update__last__seen(addr.String())
 
 		// on transforme les octets recus en struc Message
 		msg, err := Deserialize(buffer[:n])
