@@ -1,11 +1,11 @@
 package main
 
 import (
+	"crypto/ecdsa"
 	"flag"
 	"fmt"
 	"log"
 	"time"
-	"crypto/ecdsa"
 
 	"project/pkg/client"
 	"project/pkg/filesystem"
@@ -61,7 +61,7 @@ func main() {
 	// Calcul de la clé publique pour la suite
 	pubKeyBytes := identity.PublicKey__to__bytes(&privateKey.PublicKey)
 	 
-	// --- 3. DIAGNOSTICS SERVEUR (Extrait de l'ancien Main) ---
+	// --- 3. DIAGNOSTICS SERVEUR ---
 	fmt.Println("[2/6] Diagnostics connexion Serveur REST...")
 
 	// A. Enregistrement
@@ -80,15 +80,6 @@ func main() {
 		fmt.Printf("Erreur (%v)\n", err)
 	} else {
 		fmt.Printf("%d peers trouvés.\n", len(peers))
-		// On affiche les 5 premiers pour info
-		for i := 0; i < len(peers) && i < 5; i++ {
-			if peers[i] != "" {
-				fmt.Printf("    - %s\n", peers[i])
-			}
-		}
-		if len(peers) > 5 {
-			fmt.Println("    - ...")
-		}
 	}
 
 	// C. Vérification clé du serveur
@@ -114,7 +105,8 @@ func main() {
 		if err != nil {
 			log.Fatal("Erreur Merkle : ", err)
 		}
-		me.LoadFileSystem(nodes)
+		me.Load__file__system(nodes)
+		fmt.Printf(" -> Fichier chargé. RootHash: %x\n", me.RootHash)
 	} else {
 		fmt.Println("[4/6] Mode 'Leecher' (pas de fichiers partagés).")
 	}
@@ -127,7 +119,6 @@ func main() {
 	fmt.Println("[5/6] Initialisation des contacts...")
 
 	// ACTION A : Enregistrement IP auprès du serveur (Hole Punching)
-	// C'est important de le faire systématiquement
 	fmt.Printf(" -> Envoi Hello au serveur (%s) pour enregistrer l'IP...\n", serverUDPAddr)
 	err = me.Send__hello(serverUDPAddr)
 	if err != nil {
@@ -140,7 +131,7 @@ func main() {
 		fmt.Printf("\n--- SCÉNARIO DE TÉLÉCHARGEMENT VERS %s ---\n", targetAddr)
 
 		// 1. Handshake
-		fmt.Print(" -> Envoi du HELLO au pair... ")
+		fmt.Print(" 1. Envoi du HELLO au pair... ")
 		err = me.Send__hello(targetAddr)
 		if err != nil {
 			fmt.Printf("ERREUR: %v\n", err)
@@ -148,17 +139,68 @@ func main() {
 			fmt.Println("OK.")
 		}
 
-		// Attente active
-		time.Sleep(2 * time.Second)
+		// Attente pour traversée NAT
+		time.Sleep(1 * time.Second)
 
 		// 2. Request Root
-		fmt.Print(" -> Envoi du ROOT REQUEST... ")
+		fmt.Print(" 2. Envoi du ROOT REQUEST... ")
 		err = me.Send__RootRequest(targetAddr)
 		if err != nil {
 			fmt.Printf("ERREUR: %v\n", err)
 		} else {
-			fmt.Println("OK (En attente de réponse...).")
+			fmt.Println("OK.")
 		}
+
+		// 3. Attente active de la réponse (RootHash)
+		fmt.Println(" ⏳ Attente de la réception du RootHash...")
+		
+		timeout := time.After(5 * time.Second)
+		ticker := time.NewTicker(200 * time.Millisecond)
+		defer ticker.Stop()
+		
+		rootReceived := false
+
+		for {
+			select {
+			case <-timeout:
+				fmt.Println(" ❌ Timeout : Le RootHash n'a pas été reçu après 5 secondes.")
+				goto FinScenario
+			case <-ticker.C:
+				if me.RootHash != [32]byte{} {
+					rootReceived = true
+					goto Suite
+				}
+			}
+		}
+
+	Suite:
+		if rootReceived {
+			fmt.Printf(" ✅ Racine reçue : %x\n", me.RootHash)
+
+			// 4. Téléchargement des données (remplit la Database)
+			fmt.Println("\n--- DÉBUT DU TÉLÉCHARGEMENT DE L'ARBRE ---")
+			me.Download_tree(targetAddr, me.RootHash)
+			
+			// 5. Affichage de l'arbre reconstruit
+			fmt.Println("\n--- ARBORESCENCE RECONSTRUITE (DEPUIS DATABASE) ---")
+			me.PrintTree(me.RootHash)
+			fmt.Println("---------------------------------------------------")
+
+			// 6. Écriture physique sur le disque (NOUVEAU)
+			fmt.Println("\n--- ÉCRITURE SUR LE DISQUE ---")
+			outputDir := "./downloads" // Tu peux changer le dossier ici
+			fmt.Printf(" -> Création des fichiers dans '%s'...\n", outputDir)
+
+			err := me.Rebuild__file__system(me.RootHash, outputDir)
+			if err != nil {
+				fmt.Printf("❌ Erreur lors de la reconstruction : %v\n", err)
+			} else {
+				fmt.Println("✅ SUCCÈS ! Système de fichiers reconstruit.")
+			}
+		}
+	
+	FinScenario:
+
 	} else {
 		fmt.Println("\n[INFO] Pas de cible P2P spécifiée. Le peer attend les connexions.")
 	}

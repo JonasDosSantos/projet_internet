@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"net"
 	"project/pkg/client"
-	"project/pkg/filesystem"
+	//"project/pkg/filesystem"
 	"project/pkg/identity"
 	"strings"
 )
@@ -217,6 +217,9 @@ func (me *Me) Handle__DatumRequest(req *Message, addr *net.UDPAddr) {
 	}
 }
 
+
+/*
+
 // handler pour les RootReply
 func (me *Me) Handle__RootReply(req *Message, addr *net.UDPAddr) {
 
@@ -345,6 +348,16 @@ func (me *Me) Handle__Datum(req *Message, addr *net.UDPAddr) {
 		}
 }
 
+
+
+*/
+
+
+
+
+
+
+
 // Petite fonction utilitaire pour l'affichage
 func min(a, b int) int {
 	if a < b {
@@ -353,7 +366,14 @@ func min(a, b int) int {
 	return b
 }
 
-// Dans pkg/p2p/server.go
+
+
+
+
+
+
+
+
 
 /*
 func (me *Me) handleNoDatum(msg *Message, addr *net.UDPAddr) {

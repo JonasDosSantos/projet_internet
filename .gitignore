@@ -5,7 +5,10 @@
 *.test
 main
 
-# --- Sécurité ---
+#download
+downloads/
+
+# Sécurité
 identity.pem
 
 # Fichiers spécifiques OS
