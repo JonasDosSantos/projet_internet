@@ -26,7 +26,6 @@ func (me *Me) Handle__hello(req *Message, addr *net.UDPAddr) {
 		return
 	}
 	sender := strings.Trim(string(req.Body[4:]), "\x00")
-	fmt.Printf("Vérification du Hello de : '%s'\n", sender)
 
 	// on récupère la clef publique de l'emetteur en la demandant au serveur
 	pubKeyBytes, err := client.Get__publicKey(me.ServerURL, sender)
@@ -50,13 +49,32 @@ func (me *Me) Handle__hello(req *Message, addr *net.UDPAddr) {
 		return
 	}
 
-	fmt.Printf("signature de %s vérifiée\n", sender)
+	Log("signature de %s vérifiée\n", sender)
 
 	// Sauvegarde de la clé publique liée à cette IP pour plus tard (nodatum)
 	me.Mutex.Lock()
-	me.Sessions[addr.String()] = &PeerSession{
-		LastSeen:  time.Now(),
-		PublicKey: pubKey,
+
+	// on regarde si ce pair existe dans notre liste de pairs actifs
+	session, exists := me.Sessions[addr.String()]
+
+	// s'il existe (forcément) ET qu'on connait déjà sa clef
+	if exists && session.PublicKey != nil {
+		// alors c'est un KeepAlive
+		Log("KeepAlive : Hello reçu de %s", sender)
+	} else {
+		// c'est un nouveau pair
+		fmt.Printf("\nHello reçu de %s %s\n ", sender, addr)
+
+		// on enregistre sa clef publique
+		if exists {
+			session.PublicKey = pubKey
+		} else {
+			// Sécurité au cas où
+			me.Sessions[addr.String()] = &PeerSession{
+				LastSeen:  time.Now(),
+				PublicKey: pubKey,
+			}
+		}
 	}
 	me.Mutex.Unlock()
 
@@ -118,12 +136,11 @@ func (me *Me) Handle__error(req *Message, addr *net.UDPAddr) {
 	errorMessage := string(req.Body)
 
 	fmt.Printf("Error recu de %s (Id: %d) :\n", addr, req.Id)
-	fmt.Printf(">> Message : %s\n", errorMessage)
+	fmt.Printf(" Message : %s\n", errorMessage)
 }
 
 // fonction qui gère les messages RootRequest = une demande d'envoi du roothash
 func (me *Me) Handle__RootRequest(req *Message, addr *net.UDPAddr) {
-	fmt.Printf("RootRequest reçue de %s\n", addr)
 
 	// le corps de la réponse est simplement le RootHash (32 octets)
 	body := me.RootHash[:]
@@ -152,7 +169,7 @@ func (me *Me) Handle__RootRequest(req *Message, addr *net.UDPAddr) {
 // Handler pour les DatumRequest
 func (me *Me) Handle__DatumRequest(req *Message, addr *net.UDPAddr) {
 
-	// par sécurité, on vérifie que la requête contient bien un hash de 32 octets
+	// par sécurité, on vérifie que la reponse contient bien un hash de 32 octets
 	if len(req.Body) != 32 {
 		fmt.Printf("DatumRequest invalide de %s (taille body incorrecte)\n", addr)
 
@@ -194,7 +211,6 @@ func (me *Me) Handle__DatumRequest(req *Message, addr *net.UDPAddr) {
 		}
 
 		me.Conn.WriteToUDP(reply.Serialize(), addr)
-		fmt.Printf("data envoyés à %s \n", addr)
 
 	} else {
 		// si on a pas trouvé ce hash
@@ -212,9 +228,63 @@ func (me *Me) Handle__DatumRequest(req *Message, addr *net.UDPAddr) {
 		if err == nil {
 			reply.Signature = sig
 			me.Conn.WriteToUDP(reply.Serialize(), addr)
-			fmt.Printf("NoDatum envoyé à %s\n", addr)
 		}
 	}
+}
+
+// handler à la reception d'un RootReply
+func (me *Me) Handle__RootReply(req *Message, addr *net.UDPAddr) {
+	// par sécurité, on vérifie que la reponse contient bien un hash de 32 octets
+	if len(req.Body) != 32 {
+		fmt.Printf("RootReply invalide de %s (taille body incorrecte)\n", addr)
+
+		me.Handle__if__error(req, addr, "invalid hash size (must be 32 bytes) in RootReply")
+		return
+	}
+
+	// mise à jour du RootHash de notre DataBase
+	copy(me.RootHash[:], req.Body[:32])
+	fmt.Printf("roothash mis à jour: %x\n", me.RootHash)
+}
+
+// handler pour les Datum : je redirige vers le pipe qui l'attend
+func (me *Me) Handle__Datum(req *Message, addr *net.UDPAddr) {
+
+	// par sécurité, on vérifie que la reponse contient bien un hash de 32 octets
+	if len(req.Body) <= 32 {
+		fmt.Printf("Datum invalide de %s (taille body incorrecte)\n", addr)
+
+		me.Handle__if__error(req, addr, "invalid hash size (must be 32 bytes) in Datum")
+		return
+	}
+
+	// recuperation du hash
+	var receivedHash [32]byte
+	copy(receivedHash[:], req.Body[:32])
+
+	// recuperation des data
+	dataContent := req.Body[32:]
+
+	// on prend le verrou sur notre map de pipe et on verifie si l'un d'eux attend ce hash
+	me.PendingLock.Lock()
+	respChan, exists := me.PendingRequests[receivedHash]
+
+	// Si OUI
+	if exists {
+
+		// on essaye d'écrire la donnée dans le pipe
+		select {
+
+		case respChan <- dataContent:
+
+		default:
+
+		}
+		// on nettoie la map
+		delete(me.PendingRequests, receivedHash)
+	}
+	// on lache le verrou
+	me.PendingLock.Unlock()
 }
 
 func (me *Me) Handle__NoDatum(req *Message, addr *net.UDPAddr) {
@@ -233,7 +303,7 @@ func (me *Me) Handle__NoDatum(req *Message, addr *net.UDPAddr) {
 	me.Mutex.Unlock()
 
 	if !exists || session.PublicKey == nil {
-		fmt.Printf("ALERTE: NoDatum reçu de %s, mais pair connu. Ignoré.\n", addr)
+		fmt.Printf("NoDatum reçu de %s, mais pair connu. Ignoré.\n", addr)
 		return
 	}
 
@@ -241,7 +311,7 @@ func (me *Me) Handle__NoDatum(req *Message, addr *net.UDPAddr) {
 	dataToVerify := req.Serialize()[:7+len(req.Body)]
 
 	if !identity.Verify__signature(session.PublicKey, dataToVerify, req.Signature) {
-		fmt.Printf("ALERTE: Signature invalide pour NoDatum de %s\n", addr)
+		fmt.Printf("Signature invalide pour NoDatum de %s\n", addr)
 		me.Handle__if__error(req, addr, "bad signature on NoDatum")
 		return
 	}
@@ -266,7 +336,7 @@ func (me *Me) Handle__NoDatum(req *Message, addr *net.UDPAddr) {
 		// Cela va envoyer une valeur "vide" (nil) instantanément à Download_recursively.
 		// Cela évite d'attendre le timeout de 10s pour rien
 		close(ch)
-		fmt.Printf("-> Signalement d'échec envoyé au processus de téléchargement.\n")
+		fmt.Printf("échec envoyé au processus de téléchargement.\n")
 	}
 	me.PendingLock.Unlock()
 }

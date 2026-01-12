@@ -11,8 +11,8 @@ import (
 const my_file = "identity.pem"
 
 // fonction qui sauvegarde notre clef privee dans un fichier local (pour aider à la connexion ultérieurement)
-func SaveIdentity(key *ecdsa.PrivateKey) error {
-	
+func Save__Identity(key *ecdsa.PrivateKey) error {
+
 	// on construit le fichier
 	file, err := os.Create(my_file)
 	if err != nil {
@@ -26,7 +26,7 @@ func SaveIdentity(key *ecdsa.PrivateKey) error {
 	if err != nil {
 		return err
 	}
-	
+
 	pemBlock := &pem.Block{
 		Type:  "EC PRIVATE KEY",
 		Bytes: x509Encoded,
@@ -36,8 +36,8 @@ func SaveIdentity(key *ecdsa.PrivateKey) error {
 }
 
 // fonction "inverse", on lit le contenu du fichier
-func LoadIdentity() (*ecdsa.PrivateKey, error) {
-	
+func Load_Identity() (*ecdsa.PrivateKey, error) {
+
 	// on lit le fichier
 	body, err := os.ReadFile(my_file)
 	if err != nil {
