@@ -343,6 +343,30 @@ func main() {
 
 			LogMsg("téléchargement terminée en %v.\n", time.Since(start))
 
+		case "nattraversal":
+			if len(args) < 1 {
+				fmt.Println("usage: nattraversal <ip:port_cible> [ip:port_intermediaire, default=server]")
+				continue
+			}
+
+			// la cible est l'arg 0
+			targetAddr := args[0]
+
+			// par defaut, l'intermediaire est le serveur
+			relayAddr := me.ServerUDPAddr
+
+			// on utilise celui fourni par l'user (s'il en fourni un)
+			if len(args) >= 2 {
+				relayAddr = args[1]
+			}
+
+			// appel à notre fonction
+			err := me.Send__NatTraversalRequest(targetAddr, relayAddr)
+
+			if err != nil {
+				fmt.Printf(" errer demande NatTraversal : %v\n", err)
+			}
+
 		case "exit":
 			LogMsg("fin du peer")
 			return
@@ -367,6 +391,7 @@ func printHelp() {
 	fmt.Println(" ping <addr>           	: envoyer un ping")
 	fmt.Println(" root <addr>           	: demander le RootHash")
 	fmt.Println(" download <addr> <hash>	: télécharger les données associées au hash fourni")
+	fmt.Println(" nattraversal <cible> [intermediaaire]  	: demander au un intermediaire d'aider à contacter une cible derriere un NAT")
 	fmt.Println(" exit                  	: quitter")
 }
 
