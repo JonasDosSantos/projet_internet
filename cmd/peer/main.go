@@ -131,7 +131,7 @@ func main() {
 			// alors on charge le tout dans notre DataBase
 			me.Load__file__system(merkle_tree)
 		} else {
-			fmt.Printf("erreur chargement du dossier voulu : %v\n", err)
+			LogMsg("erreur chargement du dossier voulu : %v\n", err)
 		}
 	}
 
@@ -196,9 +196,9 @@ func main() {
 		case "register":
 			err = client.Register(serverURL, my_name, pubKeyBytes)
 			if err != nil {
-				fmt.Printf("erreur Register (%v)\n", err)
+				LogMsg("erreur Register (%v)\n", err)
 			} else {
-				fmt.Println("enregistrement (HTTP) auprès du serveur réussi")
+				LogMsg("enregistrement (HTTP) auprès du serveur réussi")
 			}
 
 		case "active":
@@ -206,9 +206,9 @@ func main() {
 			active_list := me.List__active__peers()
 
 			if len(active_list) == 0 {
-				fmt.Println("aucune session active")
+				LogMsg("aucune session active")
 			} else {
-				fmt.Println("Seessions actives: ")
+				LogMsg("Seessions actives: ")
 
 				for i := 0; i < len(active_list); i++ {
 					fmt.Printf("- %s\n", active_list[i])
@@ -219,9 +219,9 @@ func main() {
 			// appel au serveur pour demander la liste de pair qu'il a
 			list, err := client.Get__peer__list(serverURL)
 			if err != nil {
-				fmt.Println("Erreur get__peer_list :", err)
+				LogMsg("Erreur get__peer_list :", err)
 			} else {
-				fmt.Println("peers dans l'annuaire du serveur: ")
+				LogMsg("peers dans l'annuaire du serveur: \n")
 				for i := 0; i < len(list); i++ {
 					p := list[i]
 					fmt.Printf("- %s\n", p)
@@ -238,9 +238,9 @@ func main() {
 			// appel au serveur pour obtenir la clef publique d'un pair
 			key, err := client.Get__publicKey(serverURL, peerName)
 			if err != nil {
-				fmt.Printf(" erreur get_pubKey: %v\n", err)
+				LogMsg(" erreur get_pubKey: %v\n", err)
 			} else {
-				fmt.Printf("clef publique de %s :\n%x\n", peerName, key)
+				LogMsg("clef publique de %s :\n%x\n", peerName, key)
 			}
 
 		case "addr":
@@ -253,9 +253,9 @@ func main() {
 			// appel au serveur poir obtenir les adresses d'un pair
 			addrs, err := client.Get__peer__adresses(serverURL, peerName)
 			if err != nil {
-				fmt.Printf(" erreur get__peer__adresses : %v\n", err)
+				LogMsg(" erreur get__peer__adresses : %v\n", err)
 			} else {
-				fmt.Printf(" adresses de %s :\n", peerName)
+				LogMsg(" adresses de %s :\n", peerName)
 
 				for i := 0; i < len(addrs); i++ {
 					addr := addrs[i]
@@ -268,7 +268,7 @@ func main() {
 				fmt.Println("usage: hello <ip:port>")
 				continue
 			}
-			fmt.Printf("envoi d'un hello à %s\n", args[0])
+			LogMsg("envoi d'un hello à %s\n", args[0])
 			// on appelle notre fonction dédiée
 			me.Send__hello(args[0])
 
@@ -278,7 +278,7 @@ func main() {
 				continue
 			}
 
-			fmt.Printf("envoi d'un ping à %s\n", args[0])
+			LogMsg("envoi d'un ping à %s\n", args[0])
 
 			// on appelle notre fonction dédiée
 			me.Send__ping(args[0])
@@ -288,7 +288,7 @@ func main() {
 				fmt.Println("usage: root <ip:port>")
 				continue
 			}
-			fmt.Printf("RootRequest envoyé à %s ", args[0])
+			LogMsg("RootRequest envoyé à %s ", args[0])
 
 			// on utilise notre fonction dédiée
 			me.Send__RootRequest(args[0])
@@ -341,10 +341,10 @@ func main() {
 				continue
 			}
 
-			fmt.Printf("téléchargement terminée en %v.\n", time.Since(start))
+			LogMsg("téléchargement terminée en %v.\n", time.Since(start))
 
 		case "exit":
-			fmt.Println("fin du peer")
+			LogMsg("fin du peer")
 			return
 
 		default:
@@ -393,4 +393,10 @@ func parse__hash(hexStr string) ([32]byte, error) {
 	// on copie dans notre variable puis return
 	copy(hash[:], b)
 	return hash, nil
+}
+
+// fonction utilitaire pour afficher HH:MM:SS au début de chaque print
+func LogMsg(format string, a ...interface{}) {
+	timestamp := time.Now().Format("15:04:05")
+	fmt.Printf(timestamp+" "+format, a...)
 }

@@ -3,6 +3,7 @@ package p2p
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
 	"net"
 	"project/pkg/client"
@@ -45,7 +46,7 @@ func (me *Me) Handle__hello(req *Message, addr *net.UDPAddr) {
 		fmt.Printf("signature invalide recue de %s, message jeté\n", sender)
 
 		// on avertit l'emetteur qu'il y a eu une erreur
-		me.Handle__if__error(req, addr, "bad signature")
+		me.Handle__if__error(req, addr, "bad signature on Hello")
 		return
 	}
 
@@ -139,7 +140,7 @@ func (me *Me) Handle__error(req *Message, addr *net.UDPAddr) {
 	fmt.Printf(" Message : %s\n", errorMessage)
 }
 
-// fonction qui gère les messages RootRequest = une demande d'envoi du roothash
+// fonction qui gère les messages RootRequest = une demande d'envoi du roothash (pourrait se nommer Send__RootReply)
 func (me *Me) Handle__RootRequest(req *Message, addr *net.UDPAddr) {
 
 	// le corps de la réponse est simplement le RootHash (32 octets)
@@ -242,6 +243,25 @@ func (me *Me) Handle__RootReply(req *Message, addr *net.UDPAddr) {
 		return
 	}
 
+	// récupération de la clé publique via la Session
+	me.Mutex.Lock()
+	session, exists := me.Sessions[addr.String()]
+	me.Mutex.Unlock()
+
+	if !exists || session.PublicKey == nil {
+		fmt.Printf("RootReply reçu de %s, mais pair inconnu. Ignoré.\n", addr)
+		return
+	}
+
+	// Vérification de la signature
+	dataToVerify := req.Serialize()[:7+len(req.Body)]
+
+	if !identity.Verify__signature(session.PublicKey, dataToVerify, req.Signature) {
+		fmt.Printf("Signature invalide pour le RootReply de %s\n", addr)
+		me.Handle__if__error(req, addr, "bad signature on RootReeply")
+		return
+	}
+
 	// mise à jour du RootHash de notre DataBase
 	copy(me.RootHash[:], req.Body[:32])
 	fmt.Printf("roothash mis à jour: %x\n", me.RootHash)
@@ -303,7 +323,7 @@ func (me *Me) Handle__NoDatum(req *Message, addr *net.UDPAddr) {
 	me.Mutex.Unlock()
 
 	if !exists || session.PublicKey == nil {
-		fmt.Printf("NoDatum reçu de %s, mais pair connu. Ignoré.\n", addr)
+		fmt.Printf("NoDatum reçu de %s, mais pair inconnu. Ignoré.\n", addr)
 		return
 	}
 
@@ -316,7 +336,6 @@ func (me *Me) Handle__NoDatum(req *Message, addr *net.UDPAddr) {
 		return
 	}
 
-	// 4. LOGIQUE MÉTIER (ADAPTÉE AUX CHANNELS)
 	fmt.Printf("Le peer %s ne possède pas le hash : %x\n", addr, missingHash[:5])
 
 	// On prépare la clé pour la chercher dans la map
@@ -334,9 +353,158 @@ func (me *Me) Handle__NoDatum(req *Message, addr *net.UDPAddr) {
 
 		// On ferme le channel
 		// Cela va envoyer une valeur "vide" (nil) instantanément à Download_recursively.
-		// Cela évite d'attendre le timeout de 10s pour rien
 		close(ch)
 		fmt.Printf("échec envoyé au processus de téléchargement.\n")
 	}
 	me.PendingLock.Unlock()
+}
+
+// handlr pour les NatTraversalRequest(1) : A nous demande d'être l'intermédiaire entre lui et B (équivalent à Send__NatTraversalRequest2)
+func (me *Me) Handle__NatTraversalRequest(req *Message, addr *net.UDPAddr) {
+
+	// vérification de la taille
+	if len(req.Body) != 6 && len(req.Body) != 18 {
+		fmt.Printf("NatTraversalRequest invalide de %s (taille body incorrecte)\n", addr)
+
+		me.Handle__if__error(req, addr, "invalid body size (must be 6 or 18 bytes) in NatTraversalRequest")
+		return
+	}
+
+	// récupération de la clé publique via la Session
+	me.Mutex.Lock()
+	session, exists := me.Sessions[addr.String()]
+	me.Mutex.Unlock()
+
+	if !exists || session.PublicKey == nil {
+		fmt.Printf("NatTraversalRequest reçu de %s, mais pair inconnu. Ignoré.\n", addr)
+		return
+	}
+
+	// Vérification de la signature
+	dataToVerify := req.Serialize()[:7+len(req.Body)]
+
+	if !identity.Verify__signature(session.PublicKey, dataToVerify, req.Signature) {
+		fmt.Printf("Signature invalide pour le NatTraversalRequest de %s\n", addr)
+		me.Handle__if__error(req, addr, "bad signature on NatTraversalRequest")
+		return
+	}
+
+	// on récupère l'ip et le port cible
+	var targetIP net.IP
+	var targetPort uint16
+
+	// selon si c'est IPv4 ou IPv6
+	if len(req.Body) == 6 {
+		targetIP = net.IP(req.Body[0:4])
+		targetPort = binary.BigEndian.Uint16(req.Body[4:6])
+	} else {
+		targetIP = net.IP(req.Body[0:16])
+		targetPort = binary.BigEndian.Uint16(req.Body[16:18])
+	}
+
+	// on assemble l'ip et le port
+	targetAddrStr := fmt.Sprintf("%s:%d", targetIP.String(), targetPort)
+	targetUDP, err := net.ResolveUDPAddr("udp", targetAddrStr)
+	if err != nil {
+		return
+	}
+
+	// on prépare le ebody du message à envoeyr
+	var body []byte
+	srcIP := addr.IP.To4()
+
+	if srcIP != nil {
+		// IPv4
+		body = make([]byte, 6)
+		copy(body[0:4], srcIP)
+		binary.BigEndian.PutUint16(body[4:6], uint16(addr.Port))
+	} else {
+		// IPv6
+		srcIP = addr.IP
+		body = make([]byte, 18)
+		copy(body[0:16], srcIP)
+		binary.BigEndian.PutUint16(body[16:18], uint16(addr.Port))
+	}
+
+	/*
+		// on crée le message via notre struct
+		msg := Message{
+			Id:   me.Generate__random__id(),
+			Type: TypeNatTraversalRequest2,
+			Body: body,
+		}
+
+		// on signe le message
+		unsignedData := msg.Serialize()
+		sig, err := identity.Sign(me.PrivateKey, unsignedData)
+		if err != nil {
+			return
+		}
+		msg.Signature = sig
+	*/
+
+	// on répond OK à l'emetteur
+	me.Handle__ping(req, addr)
+
+	go func() {
+		fmt.Printf(" NatTraversalRequest reçu de %s, on transmet à %s \n", targetAddrStr, addr)
+		err := me.Send__NatTraversalRequest2(targetUDP, body)
+		if err != nil {
+			fmt.Printf(" echec du relai vers %s : %v\n", targetAddrStr, err)
+		}
+	}()
+}
+
+// Handler pour les requetes de NatTraversalRequest2 : si on reèoit cette requête, on envoie un ping à l'adresse cible
+func (me *Me) Handle__NatTraversalRequest2(req *Message, addr *net.UDPAddr) {
+
+	// vérification de la taille
+	if len(req.Body) != 6 && len(req.Body) != 18 {
+		fmt.Printf("NatTraversalRequest2 invalide de %s (taille body incorrecte)\n", addr)
+
+		me.Handle__if__error(req, addr, "invalid body size (must be 6 or 18 bytes) in NatTraversalRequest2")
+		return
+	}
+
+	// récupération de la clé publique via la Session
+	me.Mutex.Lock()
+	session, exists := me.Sessions[addr.String()]
+	me.Mutex.Unlock()
+
+	if !exists || session.PublicKey == nil {
+		fmt.Printf("NatTraversalRequest2 reçu de %s, mais pair inconnu. Ignoré.\n", addr)
+		return
+	}
+
+	// Vérification de la signature
+	dataToVerify := req.Serialize()[:7+len(req.Body)]
+
+	if !identity.Verify__signature(session.PublicKey, dataToVerify, req.Signature) {
+		fmt.Printf("Signature invalide pour le NatTraversalRequest2 de %s\n", addr)
+		me.Handle__if__error(req, addr, "bad signature on NatTraversalRequest2")
+		return
+	}
+
+	// on récupère l'ip et le port
+	var targetIP net.IP
+	var targetPort uint16
+
+	if len(req.Body) == 6 {
+		// si IPv4
+		targetIP = net.IP(req.Body[0:4])
+		targetPort = binary.BigEndian.Uint16(req.Body[4:6])
+	} else {
+		// si IPv6
+		targetIP = net.IP(req.Body[0:16])
+		targetPort = binary.BigEndian.Uint16(req.Body[16:18])
+	}
+
+	// on assemble Ip et port
+	targetAddrStr := fmt.Sprintf("%s:%d", targetIP.String(), targetPort)
+
+	// il faut envoyer un Ok à l'envoyeur du NatTraversalRequest2, on appelle notre fonction Handle__Ping qui fait exactement ca
+	me.Handle__ping(req, addr)
+
+	fmt.Printf("NatTraversalRequest2 reçu, envoi d'un ping à %s \n", targetAddrStr)
+	go me.Send__ping(targetAddrStr)
 }

@@ -73,7 +73,7 @@ func (me *Me) Generate__random__id() uint32 {
 }
 
 // convertit une ID (4 octets) en une Key (32 octets) : utile pour notre gestion des timeout message
-func Key__fron__Id(id uint32) [32]byte {
+func Key__from__Id(id uint32) [32]byte {
 
 	// on crée la variable
 	var key [32]byte
@@ -169,6 +169,9 @@ func (me *Me) Listen__loop() {
 			Log("DatumRequest recu de %s\n", addr)
 			me.Handle__DatumRequest(msg, addr)
 
+		case TypeNatTraversalRequest2:
+			me.Handle__NatTraversalRequest2(msg, addr)
+
 		/////////////
 		// REPONSES
 		/////////////
@@ -179,14 +182,14 @@ func (me *Me) Listen__loop() {
 		case TypeHelloReply:
 			Log("helloreply recu de %s\n", addr)
 
-			routingKey = Key__fron__Id(msg.Id)
+			routingKey = Key__from__Id(msg.Id)
 			dataContent = msg.Body
 			shouldRoute = true
 
 		case TypeOk:
 			Log("Ok recu de %s \n", addr)
 
-			routingKey = Key__fron__Id(msg.Id)
+			routingKey = Key__from__Id(msg.Id)
 			dataContent = msg.Body
 			shouldRoute = true
 
@@ -194,7 +197,7 @@ func (me *Me) Listen__loop() {
 			Log("RootReply recu de %s pour l'Id %d\n", addr, msg.Id)
 			me.Handle__RootReply(msg, nil)
 
-			routingKey = Key__fron__Id(msg.Id)
+			routingKey = Key__from__Id(msg.Id)
 			dataContent = msg.Body
 			shouldRoute = true
 

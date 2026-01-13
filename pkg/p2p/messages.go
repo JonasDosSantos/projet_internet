@@ -7,17 +7,19 @@ import (
 
 // types des messages en accords avec le sujet
 const (
-	TypePing = 0
-	TypeHello = 1
-	TypeRootRequest = 2
-	TypeDatumRequest = 3
-	
-	TypeOk = 128
-	Error = 129
+	TypePing                 = 0
+	TypeHello                = 1
+	TypeRootRequest          = 2
+	TypeDatumRequest         = 3
+	TypeNatTraversalRequest  = 4
+	TypeNatTraversalRequest2 = 5
+
+	TypeOk         = 128
+	Error          = 129
 	TypeHelloReply = 130
-	TypeRootReply = 131
-	TypeDatum = 132
-	TypeNoDatum = 133
+	TypeRootReply  = 131
+	TypeDatum      = 132
+	TypeNoDatum    = 133
 )
 
 // structure des messages UDP
@@ -31,7 +33,7 @@ type Message struct {
 
 // Pour transformer un message (struct Message) en message (chaine d'octets en binaire)
 func (m *Message) Serialize() []byte {
-	
+
 	// Id + Type + Length = 7 octets
 	// donc le message fait bien 7 + len(Body) + 64 (signature)
 	totalSize := 7 + len(m.Body)
