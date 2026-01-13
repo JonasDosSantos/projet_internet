@@ -208,7 +208,7 @@ func main() {
 			if len(active_list) == 0 {
 				LogMsg("aucune session active")
 			} else {
-				LogMsg("Seessions actives: ")
+				LogMsg("Seessions actives: \n")
 
 				for i := 0; i < len(active_list); i++ {
 					fmt.Printf("- %s\n", active_list[i])

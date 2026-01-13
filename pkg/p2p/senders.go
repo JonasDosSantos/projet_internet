@@ -34,7 +34,7 @@ func (me *Me) Send__with__timeout(destAddr string, key [32]byte, sendFunc func()
 			me.PendingLock.Lock()
 			delete(me.PendingRequests, key)
 			me.PendingLock.Unlock()
-			continue
+			return nil, fmt.Errorf("échec critique de l'envoi (adresse invalide ?) : %v", err)
 		}
 
 		// attente
@@ -61,8 +61,8 @@ func (me *Me) Send__with__timeout(destAddr string, key [32]byte, sendFunc func()
 			}
 
 			// on double le timeout et on reesaye
-			currentTimeout *= 2
 			fmt.Printf("timeout de %v. nouvel essai\n", currentTimeout)
+			currentTimeout *= 2
 		}
 	}
 }
