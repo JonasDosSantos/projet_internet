@@ -115,31 +115,7 @@ func (me *Me) Send__hello(destAddr string) error {
 
 	// on appelle notre fonction qui gère le timeout avec reply
 	_, err := me.Send__with__timeout(destAddr, waitKey, sendFunc, customMsg)
-	if err == nil {
-		return nil
-	}
-	////////////////////////////////////////////////////////////////////////////////////////////////
-	////////////////////////////////////////////////////////////////////////////////////////////////
-	////////////////////////////////////////////////////////////////////////////////////////////////
-	////////////////////////////////////////////////////////////////////////////////////////////////
-	////////////////////////////////////////////////////////////////////////////////////////////////
-
-	// 3. EN CAS D'ÉCHEC : AUTOMATISATION DU NAT TRAVERSAL
-	fmt.Println("Echec direct. Tentative via NAT Traversal...")
-
-	// A. On prévient le serveur (Signal)
-	// C'est ici que A dit à C : "Dis à B de m'écrire"
-	errNat := me.Send__NatTraversalRequest(destAddr, me.ServerUDPAddr)
-	if errNat != nil {
-		return fmt.Errorf("échec total (Direct + Serveur injoignable): %v", errNat)
-	}
-
-	// B. On RELANCE l'envoi vers B immédiatement (Hole Punching)
-	// C'est l'étape cruciale qui manquait dans ta proposition.
-	// On réutilise la même fonction d'envoi.
-	_, errRetry := me.Send__with__timeout(destAddr, waitKey, sendFunc, "Abandon après échec NAT Traversal")
-
-	return errRetry
+	return err
 }
 
 // fonction qui envoie un ping à une destination
