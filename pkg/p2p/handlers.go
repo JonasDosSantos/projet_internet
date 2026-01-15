@@ -425,29 +425,11 @@ func (me *Me) Handle__NatTraversalRequest(req *Message, addr *net.UDPAddr) {
 		copy(body[0:16], srcIP)
 		binary.BigEndian.PutUint16(body[16:18], uint16(addr.Port))
 	}
-
-	/*
-		// on crée le message via notre struct
-		msg := Message{
-			Id:   me.Generate__random__id(),
-			Type: TypeNatTraversalRequest2,
-			Body: body,
-		}
-
-		// on signe le message
-		unsignedData := msg.Serialize()
-		sig, err := identity.Sign(me.PrivateKey, unsignedData)
-		if err != nil {
-			return
-		}
-		msg.Signature = sig
-	*/
-
 	// on répond OK à l'emetteur
 	me.Handle__ping(req, addr)
 
 	go func() {
-		fmt.Printf(" NatTraversalRequest reçu de %s, on transmet à %s \n", targetAddrStr, addr)
+		fmt.Printf(" NatTraversalRequest reçu de %s, on transmet à %s \n", addr, targetAddrStr)
 		err := me.Send__NatTraversalRequest2(targetUDP, body)
 		if err != nil {
 			fmt.Printf(" echec du relai vers %s : %v\n", targetAddrStr, err)
@@ -460,7 +442,7 @@ func (me *Me) Handle__NatTraversalRequest2(req *Message, addr *net.UDPAddr) {
 
 	// vérification de la taille
 	if len(req.Body) != 6 && len(req.Body) != 18 {
-		fmt.Printf("NatTraversalRequest2 invalide de %s (taille body incorrecte)\n", addr)
+		fmt.Printf("NatTraversalRequest2 invalide reçu de %s (taille body incorrecte)\n", addr)
 
 		me.Handle__if__error(req, addr, "invalid body size (must be 6 or 18 bytes) in NatTraversalRequest2")
 		return
