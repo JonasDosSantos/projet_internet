@@ -14,7 +14,7 @@ func (me *Me) Send__with__timeout(destAddr string, key [32]byte, sendFunc func()
 
 	// on commence avec un timeout de 2 secondes. A chaque timeoeut on double. Si le 3eme essai (16secondes) échoue, on stop
 	currentTimeout := 2 * time.Second
-	maxTimeout := 16 * time.Second
+	maxTimeout := 8 * time.Second
 
 	for {
 		// on prépare le pipe pour la réponse
@@ -57,6 +57,7 @@ func (me *Me) Send__with__timeout(destAddr string, key [32]byte, sendFunc func()
 				if failureMsg != "" {
 					fmt.Println(failureMsg)
 				}
+
 				return nil, fmt.Errorf("timeout définitif après %v", currentTimeout)
 			}
 
@@ -114,7 +115,31 @@ func (me *Me) Send__hello(destAddr string) error {
 
 	// on appelle notre fonction qui gère le timeout avec reply
 	_, err := me.Send__with__timeout(destAddr, waitKey, sendFunc, customMsg)
-	return err
+	if err == nil {
+		return nil
+	}
+	////////////////////////////////////////////////////////////////////////////////////////////////
+	////////////////////////////////////////////////////////////////////////////////////////////////
+	////////////////////////////////////////////////////////////////////////////////////////////////
+	////////////////////////////////////////////////////////////////////////////////////////////////
+	////////////////////////////////////////////////////////////////////////////////////////////////
+
+	// 3. EN CAS D'ÉCHEC : AUTOMATISATION DU NAT TRAVERSAL
+	fmt.Println("Echec direct. Tentative via NAT Traversal...")
+
+	// A. On prévient le serveur (Signal)
+	// C'est ici que A dit à C : "Dis à B de m'écrire"
+	errNat := me.Send__NatTraversalRequest(destAddr, me.ServerUDPAddr)
+	if errNat != nil {
+		return fmt.Errorf("échec total (Direct + Serveur injoignable): %v", errNat)
+	}
+
+	// B. On RELANCE l'envoi vers B immédiatement (Hole Punching)
+	// C'est l'étape cruciale qui manquait dans ta proposition.
+	// On réutilise la même fonction d'envoi.
+	_, errRetry := me.Send__with__timeout(destAddr, waitKey, sendFunc, "Abandon après échec NAT Traversal")
+
+	return errRetry
 }
 
 // fonction qui envoie un ping à une destination
