@@ -52,11 +52,12 @@ func (me *Me) Handle__hello(req *Message, addr *net.UDPAddr) {
 
 	Log("signature de %s vérifiée\n", sender)
 
-	// Sauvegarde de la clé publique liée à cette IP pour plus tard (nodatum)
 	me.Mutex.Lock()
 
 	// on regarde si ce pair existe dans notre liste de pairs actifs
 	session, exists := me.Sessions[addr.String()]
+
+	fmt.Printf("DEBUG [Addr: %s] -> Exists: %t | Session: %+v\n", addr.String(), exists, session)
 
 	// s'il existe (forcément) ET qu'on connait déjà sa clef
 	if exists && session.PublicKey != nil {
@@ -100,6 +101,22 @@ func (me *Me) Handle__hello(req *Message, addr *net.UDPAddr) {
 
 // fonction qui gère la réception d'un ping
 func (me *Me) Handle__ping(req *Message, addr *net.UDPAddr) {
+
+	me.Mutex.Lock()
+	session, exists := me.Sessions[addr.String()]
+
+	if !exists || session.PublicKey == nil {
+		me.Mutex.Unlock()
+		fmt.Printf("RootReply reçu de %s, mais pair inconnu. Ignoré.\n", addr)
+
+		me.Handle__if__error(req, addr, " please hello first")
+		return
+	}
+
+	// puisqu'on a reçu un message valide d'une session connue, on met à jour le LastSeen
+	session.LastSeen = time.Now()
+
+	me.Mutex.Unlock()
 
 	// on cree la struct Message de la réponse
 	reply := Message{
@@ -466,6 +483,8 @@ func (me *Me) Handle__NatTraversalRequest2(req *Message, addr *net.UDPAddr) {
 		me.Handle__if__error(req, addr, "bad signature on NatTraversalRequest2")
 		return
 	}
+
+	fmt.Printf("Body du Nat2 (Bytes): %v\n", req.Body)
 
 	// on récupère l'ip et le port
 	var targetIP net.IP

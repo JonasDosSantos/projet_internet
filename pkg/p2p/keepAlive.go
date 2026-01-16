@@ -2,6 +2,7 @@ package p2p
 
 import (
 	"fmt"
+	"net"
 	"time"
 )
 
@@ -27,11 +28,19 @@ func (me *Me) Start__maintenance__loop() {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		// On envoie un keepalive au serveur ttes les 30 secondes car il assure également le maintien du NAT
-		Log("Keep-alive : Envoi Hello au serveur central.")
-		me.Send__hello(me.ServerUDPAddr)
-
 		me.Mutex.Lock()
+
+		// boolean
+		ping_server := false
+
+		sAddr, err := net.ResolveUDPAddr("udp", me.ServerUDPAddr)
+		if err == nil {
+			// s'il existe deja une session avec le serveur alors il faut le prendre dans les keep alive
+			if _, exists := me.Sessions[sAddr.String()]; exists {
+				ping_server = true
+			}
+		}
+
 		now := time.Now()
 
 		for addr, session := range me.Sessions {
@@ -44,14 +53,19 @@ func (me *Me) Start__maintenance__loop() {
 				continue
 			}
 
-			// Après 4 minutes : keepalive
-			if diff > 4*time.Minute {
+			// Après 3 minutes : keepalive
+			if diff > 3*time.Minute {
 				Log("Keep-alive : Envoi Ping automatique à %s\n", addr)
 				// On lance le ping via la fonction "send__ping" dans une goroutine pour ne pas bloquer le mutex
 				go me.Send__ping(addr)
 			}
 		}
 		me.Mutex.Unlock()
+
+		if ping_server {
+			Log("Keep-alive : Envoi Hello au serveur")
+			go me.Send__hello(me.ServerUDPAddr)
+		}
 	}
 }
 
@@ -61,15 +75,25 @@ func (me *Me) List__active__peers() []string {
 	// je prends le verrou sur la map de mes connexions
 	me.Mutex.Lock()
 
-	// je le lacherais à la fin de la fonction
+	// on le lacherais à la fin de la fonction
 	defer me.Mutex.Unlock()
 
-	// je prepare un tableau
+	// on prepare un tableau
 	var activeList []string
 
-	// on parcout la map
-	for addr := range me.Sessions {
-		activeList = append(activeList, addr)
+	for addr, session := range me.Sessions {
+
+		keys := "no key"
+
+		if session.PublicKey != nil {
+
+			raw_key := fmt.Sprintf("%x", session.PublicKey)
+
+			keys = fmt.Sprintf("%s...", raw_key[:12])
+		}
+
+		entry := fmt.Sprintf("%s : %s", addr, keys)
+		activeList = append(activeList, entry)
 	}
 
 	return activeList

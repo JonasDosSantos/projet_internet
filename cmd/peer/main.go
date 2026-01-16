@@ -206,7 +206,7 @@ func main() {
 			active_list := me.List__active__peers()
 
 			if len(active_list) == 0 {
-				LogMsg("aucune session active")
+				LogMsg("aucune session active\n")
 			} else {
 				LogMsg("Seessions actives: \n")
 

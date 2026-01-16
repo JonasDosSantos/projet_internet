@@ -53,7 +53,7 @@ func (me *Me) Send__with__timeout(destAddr string, key [32]byte, sendFunc func()
 
 			// si on a atteint le max de timeout définit, on renvoi une erreur
 			if currentTimeout >= maxTimeout {
-				fmt.Println("echec de l'envoi du message, aucune réponse après 4 tentatives et 30s")
+				fmt.Println("echec de l'envoi du message, aucune réponse après 3 tentatives et 14s")
 				if failureMsg != "" {
 					fmt.Println(failureMsg)
 				}
@@ -71,6 +71,12 @@ func (me *Me) Send__with__timeout(destAddr string, key [32]byte, sendFunc func()
 // fonction qui envoie Hello à une destination (paramètre destAddr)
 func (me *Me) Send__hello(destAddr string) error {
 
+	// on prépare l'adresse de destination pour UDP
+	udpAddr, err := net.ResolveUDPAddr("udp", destAddr)
+	if err != nil {
+		return err
+	}
+
 	// on genere l'ID de ce message
 	msgId := me.Generate__random__id()
 
@@ -80,13 +86,7 @@ func (me *Me) Send__hello(destAddr string) error {
 	// on crée une "action", c'est ce qui est transmis à Send__with__timeout
 	sendFunc := func() error {
 
-		// on prépare l'adresse de destination pour UDP
-		udpAddr, err := net.ResolveUDPAddr("udp", destAddr)
-		if err != nil {
-			return err
-		}
-
-		// le coprs du message est Extensions + Name (d'où 4octets + taille de Name en octets)
+		// le corps du message est Extensions + Name (d'où 4octets + taille de Name en octets)
 		body := make([]byte, 4+len(me.PeerName))
 
 		// on écrit le nom du Peer à la fin (les 4 premiers octets sont vides pour le moment)
@@ -114,7 +114,7 @@ func (me *Me) Send__hello(destAddr string) error {
 	customMsg := fmt.Sprintln(" Echec d'un Hello, veuillez réessayer avec l'option de NAT Traversal")
 
 	// on appelle notre fonction qui gère le timeout avec reply
-	_, err := me.Send__with__timeout(destAddr, waitKey, sendFunc, customMsg)
+	_, err = me.Send__with__timeout(destAddr, waitKey, sendFunc, customMsg)
 	return err
 }
 
