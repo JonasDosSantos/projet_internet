@@ -6,24 +6,9 @@ import (
 	"time"
 )
 
-// Met à jour l'heure de dernier contact avec une adresse
-func (me *Me) Update__last__seen(addrStr string) {
-	me.Mutex.Lock()
-	defer me.Mutex.Unlock()
-
-	if session, exists := me.Sessions[addrStr]; exists {
-		session.LastSeen = time.Now()
-	} else {
-		// Nouvelle session, on l'ajoute
-		me.Sessions[addrStr] = &PeerSession{
-			LastSeen: time.Now(),
-		}
-	}
-}
-
 func (me *Me) Start__maintenance__loop() {
 	// On vérifie toutes les 30 secondes
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(1 * time.Minute)
 	// Le timer s'arrêtera lorsque la maintenance_loop s'éteindra
 	defer ticker.Stop()
 
@@ -35,7 +20,7 @@ func (me *Me) Start__maintenance__loop() {
 
 		sAddr, err := net.ResolveUDPAddr("udp", me.ServerUDPAddr)
 		if err == nil {
-			// s'il existe deja une session avec le serveur alors il faut le prendre dans les keep alive
+			// s'il existe deja une session avec le serveur alors il faut le prendre en compte dans les keep alive
 			if _, exists := me.Sessions[sAddr.String()]; exists {
 				ping_server = true
 			}

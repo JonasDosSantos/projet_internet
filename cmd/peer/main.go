@@ -3,11 +3,11 @@ package main
 import (
 	"bufio"
 	"crypto/ecdsa"
-	"encoding/hex"
 	"flag"
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -27,7 +27,7 @@ func main() {
 	// on active le mode bavard si demandé par -b
 	p2p.Verbose = *verbosePtr
 	if p2p.Verbose {
-		fmt.Println("mode bavard activé")
+		fmt.Println("Verbose mode activated")
 	}
 
 	/////////////
@@ -313,35 +313,63 @@ func main() {
 			}
 
 		case "download":
-			if len(args) < 2 {
-				fmt.Println("usage: download <ip:port> <root_hash_hex>")
+			if len(args) < 1 {
+				fmt.Println("usage: download <ip:port> [path_file]")
 				continue
 			}
 			// la destination est le premier argument
-			addr_dest := args[0]
+			destAddr := args[0]
 
-			// le hash est le second argument, on appelle notre fonction dessus pour vérifier sa conformité (et le transformer en chaine d'octets)
-			hashBytes, err := parse__hash(args[1])
+			targetPath := ""
+			if len(args) > 1 {
+				targetPath = args[1]
+			}
+
+			rootBytes, err := me.Send__RootRequest(destAddr)
 			if err != nil {
-				fmt.Println("hash invalide :", err)
+				fmt.Printf("Impossible de récupérer la racine de %s : %v\n", destAddr, err)
 				continue
+			}
+
+			var rootHash [32]byte
+			copy(rootHash[:], rootBytes)
+			var targetHash [32]byte
+
+			if targetPath == "" {
+				targetHash = rootHash
+			} else {
+				foundHash, err := me.Get__hash__from__path(destAddr, rootHash, targetPath)
+				if err != nil {
+					fmt.Printf("Erreur : %v\n", err)
+					continue
+				}
+				targetHash = foundHash
 			}
 
 			// on lance un chrono
 			start := time.Now()
 
 			// on appelle notre fonction de téléchargement
-			me.Download_tree(addr_dest, hashBytes)
+			me.Download_tree(destAddr, targetHash)
+
+			var outName string
+			if targetPath != "" {
+				outName = filepath.Base(targetPath)
+			} else {
+				outName = fmt.Sprintf("root_%x", targetHash[:4])
+			}
 
 			// on écrit le dossier téléchargé en local
-			outDir := "./downloads"
-			err = me.Rebuild__file__system(hashBytes, outDir)
+			outDir := filepath.Join("downloads", outName)
+
+			// on reconstruit ce qui est dans la RAM actuellement
+			err = me.Rebuild__file__system(targetHash, outDir)
 			if err != nil {
-				fmt.Println("erreur téléchargement")
+				fmt.Printf("erreur téléchargement, erreur %v:\n", err)
 				continue
 			}
 
-			LogMsg("téléchargement terminée en %v.\n", time.Since(start))
+			LogMsg("téléchargement terminé en %v.\n", time.Since(start))
 
 		case "nattraversal":
 			if len(args) < 1 {
@@ -367,6 +395,15 @@ func main() {
 				fmt.Printf(" errer demande NatTraversal : %v\n", err)
 			}
 
+		case "print":
+			targetAddr := ""
+
+			if len(args) > 0 {
+				targetAddr = args[0]
+			}
+
+			go me.Print__Tree(targetAddr)
+
 		case "exit":
 			LogMsg("fin du peer")
 			return
@@ -390,34 +427,10 @@ func printHelp() {
 	fmt.Println(" hello <addr>          	: envoyer un hello")
 	fmt.Println(" ping <addr>           	: envoyer un ping")
 	fmt.Println(" root <addr>           	: demander le RootHash")
-	fmt.Println(" download <addr> <hash>	: télécharger les données associées au hash fourni")
-	fmt.Println(" nattraversal <cible> [intermediaaire]  	: demander au un intermediaire d'aider à contacter une cible derriere un NAT")
+	fmt.Println(" download <addr> [file]	: télécharger les données d'un peer (default = whole tree)")
+	fmt.Println(" print [addr] 				: affiche l'arbre d'un pair (default: local)")
+	fmt.Println(" nattraversal <cible> [intermediaire]  	: demander à un intermediaire d'aider (default = server)")
 	fmt.Println(" exit                  	: quitter")
-}
-
-// fonction pour convertir une chaine de caractère (hexadecimale) en octets
-// utilse car les hash sont écrit en hexadecimal dans le terminal et il faut les "traduire" en octets pour les utilisr
-func parse__hash(hexStr string) ([32]byte, error) {
-
-	//on prépare notre tableau d'octets
-	hash := [32]byte{}
-
-	// on convertit la chaine d'hexa en octets
-	b, err := hex.DecodeString(hexStr)
-
-	// s'il y a une erreur, on return
-	if err != nil {
-		return hash, err
-	}
-
-	// verification de la taille
-	if len(b) != 32 {
-		return hash, fmt.Errorf("taille incorrecte (%d)", len(b))
-	}
-
-	// on copie dans notre variable puis return
-	copy(hash[:], b)
-	return hash, nil
 }
 
 // fonction utilitaire pour afficher HH:MM:SS au début de chaque print

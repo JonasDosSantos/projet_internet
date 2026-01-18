@@ -133,19 +133,15 @@ func (me *Me) Listen__loop() {
 			continue
 		}
 
-		// On met à jour la session dès qu'on reçoit n'importe quel octet valide
-		me.Update__last__seen(addr.String())
-
-		// on transforme les octets recus en struc Message
+		// on transforme les octets recus en struct Message
 		msg, err := Deserialize(buffer[:n])
 		if err != nil {
 			fmt.Println("Erreur de désérialisation :", err)
 			continue
 		}
-
-		routingKey := [32]byte{}
-		dataContent := make([]byte, 0)
-		shouldRoute := false
+		if msg.Type != TypeDatum {
+			Log("[DEBUG] Received : type: %d, id: %d, addr: %s\n", msg.Type, msg.Id, addr)
+		}
 
 		// on agit différement selon le Type de message
 		switch msg.Type {
@@ -155,18 +151,15 @@ func (me *Me) Listen__loop() {
 		////////////////
 
 		case TypePing:
-			Log("ping recu de %s\n", addr)
 			me.Handle__ping(msg, addr)
 
 		case TypeHello:
 			me.Handle__hello(msg, addr)
 
 		case TypeRootRequest:
-			Log("RootRequest recu de %s\n", addr)
 			me.Handle__RootRequest(msg, addr)
 
 		case TypeDatumRequest:
-			Log("DatumRequest recu de %s\n", addr)
 			me.Handle__DatumRequest(msg, addr)
 
 		case TypeNatTraversalRequest2:
@@ -180,29 +173,15 @@ func (me *Me) Listen__loop() {
 			me.Handle__error(msg, addr)
 
 		case TypeHelloReply:
-			Log("helloreply recu de %s\n", addr)
-
-			routingKey = Key__from__Id(msg.Id)
-			dataContent = msg.Body
-			shouldRoute = true
+			me.Handle__helloReply(msg, addr)
 
 		case TypeOk:
-			Log("Ok recu de %s \n", addr)
-
-			routingKey = Key__from__Id(msg.Id)
-			dataContent = msg.Body
-			shouldRoute = true
+			me.Handle__Ok(msg, addr)
 
 		case TypeRootReply:
-			Log("RootReply recu de %s pour l'Id %d\n", addr, msg.Id)
-			me.Handle__RootReply(msg, nil)
-
-			routingKey = Key__from__Id(msg.Id)
-			dataContent = msg.Body
-			shouldRoute = true
+			me.Handle__RootReply(msg, addr)
 
 		case TypeNoDatum:
-			Log("noDatum recu de %s\n", addr)
 			me.Handle__NoDatum(msg, addr)
 
 		case TypeDatum:
@@ -212,33 +191,6 @@ func (me *Me) Listen__loop() {
 		default:
 			fmt.Printf("type de message non géré : %d\n", msg.Type)
 			me.Handle__if__error(msg, addr, fmt.Sprintf("unknown message type: %d", msg.Type))
-		}
-
-		// routage (dans le cas des réponses) : il y a actuellemnt un pipe qui attend cette réponse
-		if shouldRoute {
-
-			// je prend le verrou sur la map de pipe
-			me.PendingLock.Lock()
-			// je regarde s'il existe bien un pipe qui attend cette réponse
-			respChan, exists := me.PendingRequests[routingKey]
-
-			// si OUI
-			if exists {
-
-				select {
-
-				// on essaye d'écrire la donnée dans le pipe
-				case respChan <- dataContent:
-
-				// sinon, on delete le pipe
-				default:
-				}
-
-				// on nettoie notre map de pipe car l'ID est unique
-				delete(me.PendingRequests, routingKey)
-			}
-			// on lache le verrou
-			me.PendingLock.Unlock()
 		}
 	}
 }

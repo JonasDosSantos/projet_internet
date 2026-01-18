@@ -1,16 +1,17 @@
 Nathan : 
-Jonas : NAT traversal
+Jonas : Diffie Hellman
 
- Diffie Hellman
+
+
 Sources, commentaires, organisation
-Je crois qu'il y a des messages dont on devrait vérifier la signature mais on le fait pas. à vérifier dans le sujet
-+ d'infos la dessus: je crois qu'on enregistre un pair trop tot (avant d'avoir verifié les signatures etc)
- Faut il un Handle__HElloReply qui vérifie la signature ???????
-
- Mettre a jour les Hello pour prendre en compte les extensions
-
- on update_last_seen pas au bon moment : actuellement on fait ca dès qu'on recoit quelque chose et si on avait pas encore de sessions avec l'emetteur alors on en crée une mais non. il faut creer qui si on a deja échangé un hello
-=====> pour ca, voir handle_ping qui le fait correctement
 
 
- handle_if_error a faire pour les user inconnus (comme dans handle_ping) : gérer toutes les erreurs en fait
+
+Mettre a jour les Hello pour prendre en compte les extensions
+
+
+
+Manque t il des Handle__if__error
+
+
+fonction dans le main pour transformer automatiquement un nom en addr pcq c'est chiant de tapeer ip:port à chaque fois

@@ -14,7 +14,36 @@ import (
 	"time"
 )
 
-// HANDLERS DE GESTION LORS DE LA RECEPTION DE Hello, Ping ET Error
+// HANDLERS DE GESTION LORS DE LA RECEPTION DE Hello, Ping, Error etc
+
+// Handler pour les messages de type OK
+func (me *Me) Handle__Ok(req *Message, addr *net.UDPAddr) {
+
+	// je prend le verrou sur la map de pipe
+	me.PendingLock.Lock()
+	// je regarde s'il existe bien un pipe qui attend cette réponse
+	respChan, exists := me.PendingRequests[Key__from__Id(req.Id)]
+
+	// si OUI
+	if exists {
+
+		select {
+
+		// on essaye d'écrire la donnée dans le pipe
+		case respChan <- req.Body:
+
+		// sinon, on delete le pipe
+		default:
+		}
+
+		// on nettoie notre map de pipe car l'ID est unique
+		delete(me.PendingRequests, Key__from__Id(req.Id))
+	}
+	// on lache le verrou
+	me.PendingLock.Unlock()
+
+	Log("Ok reçu de %s", addr)
+}
 
 // fonction qui gère la réception d'un Hello
 func (me *Me) Handle__hello(req *Message, addr *net.UDPAddr) {
@@ -50,14 +79,10 @@ func (me *Me) Handle__hello(req *Message, addr *net.UDPAddr) {
 		return
 	}
 
-	Log("signature de %s vérifiée\n", sender)
-
 	me.Mutex.Lock()
 
 	// on regarde si ce pair existe dans notre liste de pairs actifs
 	session, exists := me.Sessions[addr.String()]
-
-	fmt.Printf("DEBUG [Addr: %s] -> Exists: %t | Session: %+v\n", addr.String(), exists, session)
 
 	// s'il existe (forcément) ET qu'on connait déjà sa clef
 	if exists && session.PublicKey != nil {
@@ -99,15 +124,99 @@ func (me *Me) Handle__hello(req *Message, addr *net.UDPAddr) {
 	me.Conn.WriteToUDP(reply.Serialize(), addr)
 }
 
+// fonction qui gère la réception d'un HelloReply
+func (me *Me) Handle__helloReply(req *Message, addr *net.UDPAddr) {
+
+	// on récupère le nom de l'emetteur (le nom est placé après les 4octets de bitmap représentants les extensions)
+	if len(req.Body) < 4 {
+		fmt.Println("le message HelloReply est incorrect")
+
+		me.Handle__if__error(req, addr, "invalid helloReply format")
+		return
+	}
+	sender := strings.Trim(string(req.Body[4:]), "\x00")
+
+	// on récupère la clef publique de l'emetteur en la demandant au serveur
+	pubKeyBytes, err := client.Get__publicKey(me.ServerURL, sender)
+	if err != nil {
+		fmt.Printf("clef de %s introuvable\n", sender)
+
+		me.Handle__if__error(req, addr, "sender's key is nowhere to be found")
+		return
+	}
+	pubKey, _ := identity.Bytes__to__PublicKey(pubKeyBytes)
+
+	// Il ne faut pas vérifier tout le message mais seulement le "header" + le body
+	dataToVerify := req.Serialize()[:7+len(req.Body)]
+
+	// on vérifie
+	if !identity.Verify__signature(pubKey, dataToVerify, req.Signature) {
+		fmt.Printf("signature invalide recue de %s, message jeté\n", sender)
+
+		// on avertit l'emetteur qu'il y a eu une erreur
+		me.Handle__if__error(req, addr, "bad signature on HelloReply")
+		return
+	}
+
+	me.Mutex.Lock()
+
+	// on regarde si ce pair existe dans notre liste de pairs actifs
+	session, exists := me.Sessions[addr.String()]
+
+	// s'il existe (forcément) ET qu'on connait déjà sa clef
+	if exists && session.PublicKey != nil {
+		// alors c'est un KeepAlive
+		Log("KeepAlive : HelloReply reçu de %s", sender)
+	} else {
+		// c'est un nouveau pair
+		fmt.Printf("\nHelloReply reçu de %s %s\n ", sender, addr)
+
+		// on enregistre sa clef publique
+		if exists {
+			session.PublicKey = pubKey
+		} else {
+			// Sécurité au cas où
+			me.Sessions[addr.String()] = &PeerSession{
+				LastSeen:  time.Now(),
+				PublicKey: pubKey,
+			}
+		}
+	}
+	me.Mutex.Unlock()
+
+	// je prend le verrou sur la map de pipe
+	me.PendingLock.Lock()
+	// je regarde s'il existe bien un pipe qui attend cette réponse
+	respChan, exists := me.PendingRequests[Key__from__Id((req.Id))]
+
+	// si OUI
+	if exists {
+
+		select {
+
+		// on essaye d'écrire la donnée dans le pipe
+		case respChan <- req.Body:
+
+		// sinon, on delete le pipe
+		default:
+		}
+
+		// on nettoie notre map de pipe car l'ID est unique
+		delete(me.PendingRequests, Key__from__Id((req.Id)))
+	}
+	// on lache le verrou
+	me.PendingLock.Unlock()
+}
+
 // fonction qui gère la réception d'un ping
 func (me *Me) Handle__ping(req *Message, addr *net.UDPAddr) {
 
 	me.Mutex.Lock()
 	session, exists := me.Sessions[addr.String()]
 
-	if !exists || session.PublicKey == nil {
+	if !exists {
 		me.Mutex.Unlock()
-		fmt.Printf("RootReply reçu de %s, mais pair inconnu. Ignoré.\n", addr)
+		fmt.Printf("Ping reçu de %s, mais pair inconnu. Ignoré.\n", addr)
 
 		me.Handle__if__error(req, addr, " please hello first")
 		return
@@ -130,6 +239,8 @@ func (me *Me) Handle__ping(req *Message, addr *net.UDPAddr) {
 
 	// on renvoie le OK à l'emetteur
 	me.Conn.WriteToUDP(data, addr)
+	Log("Ping reçu de %s", addr)
+	Log("Envoi d'un Ok à %s", addr)
 }
 
 // fonction qui envoie une erreur à une destination, en paramètre: la destination et le message Human-Readable
@@ -154,11 +265,50 @@ func (me *Me) Handle__error(req *Message, addr *net.UDPAddr) {
 	errorMessage := string(req.Body)
 
 	fmt.Printf("Error recu de %s (Id: %d) :\n", addr, req.Id)
-	fmt.Printf(" Message : %s\n", errorMessage)
+	fmt.Printf("Message : %s\n", errorMessage)
+
+	// je prend le verrou sur la map de pipe
+	me.PendingLock.Lock()
+	// je regarde s'il existe bien un pipe qui attend cette réponse
+	respChan, exists := me.PendingRequests[Key__from__Id((req.Id))]
+
+	// si OUI
+	if exists {
+
+		select {
+
+		// on essaye d'écrire la donnée dans le pipe
+		case respChan <- req.Body:
+
+		// sinon, on delete le pipe
+		default:
+		}
+
+		// on nettoie notre map de pipe car l'ID est unique
+		delete(me.PendingRequests, Key__from__Id((req.Id)))
+	}
+	// on lache le verrou
+	me.PendingLock.Unlock()
 }
 
 // fonction qui gère les messages RootRequest = une demande d'envoi du roothash (pourrait se nommer Send__RootReply)
 func (me *Me) Handle__RootRequest(req *Message, addr *net.UDPAddr) {
+
+	me.Mutex.Lock()
+	session, exists := me.Sessions[addr.String()]
+
+	if !exists {
+		me.Mutex.Unlock()
+		fmt.Printf("RootRequest reçu de %s, mais pair inconnu. Ignoré.\n", addr)
+
+		me.Handle__if__error(req, addr, " please hello first")
+		return
+	}
+
+	// puisqu'on a reçu un message valide d'une session connue, on met à jour le LastSeen
+	session.LastSeen = time.Now()
+
+	me.Mutex.Unlock()
 
 	// le corps de la réponse est simplement le RootHash (32 octets)
 	body := me.RootHash[:]
@@ -182,10 +332,28 @@ func (me *Me) Handle__RootRequest(req *Message, addr *net.UDPAddr) {
 
 	// Envoi
 	me.Conn.WriteToUDP(reply.Serialize(), addr)
+
+	Log("RootRequest reçu de %s", addr)
 }
 
 // Handler pour les DatumRequest
 func (me *Me) Handle__DatumRequest(req *Message, addr *net.UDPAddr) {
+
+	me.Mutex.Lock()
+	session, exists := me.Sessions[addr.String()]
+
+	if !exists {
+		me.Mutex.Unlock()
+		fmt.Printf("DatumRequest reçu de %s, mais pair inconnu. Ignoré.\n", addr)
+
+		me.Handle__if__error(req, addr, " please hello first")
+		return
+	}
+
+	// puisqu'on a reçu un message valide d'une session connue, on met à jour le LastSeen
+	session.LastSeen = time.Now()
+
+	me.Mutex.Unlock()
 
 	// par sécurité, on vérifie que la reponse contient bien un hash de 32 octets
 	if len(req.Body) != 32 {
@@ -195,12 +363,16 @@ func (me *Me) Handle__DatumRequest(req *Message, addr *net.UDPAddr) {
 		return
 	}
 
+	Log("DatumRequest reçu de %s", addr)
+
 	// On récupère le hash demandé
 	var requestedHash [32]byte
 	copy(requestedHash[:], req.Body)
 
 	// On cherche dans notre "Base de données" en mémoire
+	me.DbLock.Lock()
 	data, found := me.Database[requestedHash]
+	me.DbLock.Unlock()
 
 	if found {
 		// on vérifie que les data qu'on a dans notre "Base de Données" correspond bien au hash demandé
@@ -229,6 +401,7 @@ func (me *Me) Handle__DatumRequest(req *Message, addr *net.UDPAddr) {
 		}
 
 		me.Conn.WriteToUDP(reply.Serialize(), addr)
+		Log("Envoi d'un Datum à %s", addr)
 
 	} else {
 		// si on a pas trouvé ce hash
@@ -246,27 +419,43 @@ func (me *Me) Handle__DatumRequest(req *Message, addr *net.UDPAddr) {
 		if err == nil {
 			reply.Signature = sig
 			me.Conn.WriteToUDP(reply.Serialize(), addr)
+			Log("Envoi d'un NoDatum à %s", addr)
 		}
 	}
 }
 
 // handler à la reception d'un RootReply
 func (me *Me) Handle__RootReply(req *Message, addr *net.UDPAddr) {
+
+	me.Mutex.Lock()
+	session, exists := me.Sessions[addr.String()]
+
+	if !exists {
+		me.Mutex.Unlock()
+		fmt.Printf("RootReply reçu de %s, mais pair inconnu. Ignoré.\n", addr)
+
+		me.Handle__if__error(req, addr, " please hello first")
+		return
+	}
+
+	if session.PublicKey == nil {
+		me.Mutex.Unlock()
+		fmt.Printf("RootReply reçu de %s, mais clef du pair inconnue. Ignoré.\n", addr)
+
+		me.Handle__if__error(req, addr, "your key is nowhere to be found, error could be our fault")
+		return
+	}
+
+	// puisqu'on a reçu un message valide d'une session connue, on met à jour le LastSeen
+	session.LastSeen = time.Now()
+
+	me.Mutex.Unlock()
+
 	// par sécurité, on vérifie que la reponse contient bien un hash de 32 octets
 	if len(req.Body) != 32 {
 		fmt.Printf("RootReply invalide de %s (taille body incorrecte)\n", addr)
 
 		me.Handle__if__error(req, addr, "invalid hash size (must be 32 bytes) in RootReply")
-		return
-	}
-
-	// récupération de la clé publique via la Session
-	me.Mutex.Lock()
-	session, exists := me.Sessions[addr.String()]
-	me.Mutex.Unlock()
-
-	if !exists || session.PublicKey == nil {
-		fmt.Printf("RootReply reçu de %s, mais pair inconnu. Ignoré.\n", addr)
 		return
 	}
 
@@ -279,13 +468,54 @@ func (me *Me) Handle__RootReply(req *Message, addr *net.UDPAddr) {
 		return
 	}
 
+	Log("RootReply reçu de %s", addr)
+
 	// mise à jour du RootHash de notre DataBase
 	copy(me.RootHash[:], req.Body[:32])
-	fmt.Printf("roothash mis à jour: %x\n", me.RootHash)
+	Log("roothash mis à jour: %x\n", me.RootHash)
+
+	// je prend le verrou sur la map de pipe
+	me.PendingLock.Lock()
+	// je regarde s'il existe bien un pipe qui attend cette réponse
+	respChan, exists := me.PendingRequests[Key__from__Id(req.Id)]
+
+	// si OUI
+	if exists {
+
+		select {
+
+		// on essaye d'écrire la donnée dans le pipe
+		case respChan <- req.Body:
+
+		// sinon, on delete le pipe
+		default:
+		}
+
+		// on nettoie notre map de pipe car l'ID est unique
+		delete(me.PendingRequests, Key__from__Id(req.Id))
+	}
+	// on lache le verrou
+	me.PendingLock.Unlock()
 }
 
 // handler pour les Datum : je redirige vers le pipe qui l'attend
 func (me *Me) Handle__Datum(req *Message, addr *net.UDPAddr) {
+
+	me.Mutex.Lock()
+	session, exists := me.Sessions[addr.String()]
+
+	if !exists {
+		me.Mutex.Unlock()
+		fmt.Printf("Datum reçu de %s, mais pair inconnu. Ignoré.\n", addr)
+
+		me.Handle__if__error(req, addr, " please hello first")
+		return
+	}
+
+	// puisqu'on a reçu un message valide d'une session connue, on met à jour le LastSeen
+	session.LastSeen = time.Now()
+
+	me.Mutex.Unlock()
 
 	// par sécurité, on vérifie que la reponse contient bien un hash de 32 octets
 	if len(req.Body) <= 32 {
@@ -325,6 +555,26 @@ func (me *Me) Handle__Datum(req *Message, addr *net.UDPAddr) {
 }
 
 func (me *Me) Handle__NoDatum(req *Message, addr *net.UDPAddr) {
+
+	me.Mutex.Lock()
+	session, exists := me.Sessions[addr.String()]
+
+	if !exists {
+		me.Mutex.Unlock()
+		fmt.Printf("NoDatum reçu de %s, mais pair inconnu. Ignoré.\n", addr)
+
+		me.Handle__if__error(req, addr, " please hello first")
+		return
+	}
+
+	if session.PublicKey == nil {
+		me.Mutex.Unlock()
+		fmt.Printf("NoDatum reçu de %s, mais clef du pair inconnue. Ignoré.\n", addr)
+
+		me.Handle__if__error(req, addr, "your key is nowhere to be found, error could be our fault")
+		return
+	}
+
 	// Validation de la taille
 	if len(req.Body) != 32 {
 		fmt.Printf("NoDatum invalide reçu de %s (taille != 32)\n", addr)
@@ -333,16 +583,6 @@ func (me *Me) Handle__NoDatum(req *Message, addr *net.UDPAddr) {
 	}
 
 	missingHash := req.Body[:32]
-
-	// récupération de la clé publique via la Session
-	me.Mutex.Lock()
-	session, exists := me.Sessions[addr.String()]
-	me.Mutex.Unlock()
-
-	if !exists || session.PublicKey == nil {
-		fmt.Printf("NoDatum reçu de %s, mais pair inconnu. Ignoré.\n", addr)
-		return
-	}
 
 	// Vérification de la signature
 	dataToVerify := req.Serialize()[:7+len(req.Body)]
@@ -353,7 +593,7 @@ func (me *Me) Handle__NoDatum(req *Message, addr *net.UDPAddr) {
 		return
 	}
 
-	fmt.Printf("Le peer %s ne possède pas le hash : %x\n", addr, missingHash[:5])
+	Log("NoDatum reçu de %s, le peer ne possède pas le hash : %x\n", addr, missingHash[:5])
 
 	// On prépare la clé pour la chercher dans la map
 	var hashArray [32]byte
@@ -379,21 +619,35 @@ func (me *Me) Handle__NoDatum(req *Message, addr *net.UDPAddr) {
 // handlr pour les NatTraversalRequest(1) : A nous demande d'être l'intermédiaire entre lui et B (équivalent à Send__NatTraversalRequest2)
 func (me *Me) Handle__NatTraversalRequest(req *Message, addr *net.UDPAddr) {
 
+	me.Mutex.Lock()
+	session, exists := me.Sessions[addr.String()]
+
+	if !exists {
+		me.Mutex.Unlock()
+		fmt.Printf("NatTraversalRequest reçu de %s, mais pair inconnu. Ignoré.\n", addr)
+
+		me.Handle__if__error(req, addr, " please hello first")
+		return
+	}
+
+	if session.PublicKey == nil {
+		me.Mutex.Unlock()
+		fmt.Printf("NatTraversalRequest reçu de %s, mais clef du pair inconnue. Ignoré.\n", addr)
+
+		me.Handle__if__error(req, addr, "your key is nowhere to be found, error could be our fault")
+		return
+	}
+
+	// puisqu'on a reçu un message valide d'une session connue, on met à jour le LastSeen
+	session.LastSeen = time.Now()
+
+	me.Mutex.Unlock()
+
 	// vérification de la taille
 	if len(req.Body) != 6 && len(req.Body) != 18 {
 		fmt.Printf("NatTraversalRequest invalide de %s (taille body incorrecte)\n", addr)
 
 		me.Handle__if__error(req, addr, "invalid body size (must be 6 or 18 bytes) in NatTraversalRequest")
-		return
-	}
-
-	// récupération de la clé publique via la Session
-	me.Mutex.Lock()
-	session, exists := me.Sessions[addr.String()]
-	me.Mutex.Unlock()
-
-	if !exists || session.PublicKey == nil {
-		fmt.Printf("NatTraversalRequest reçu de %s, mais pair inconnu. Ignoré.\n", addr)
 		return
 	}
 
@@ -405,6 +659,8 @@ func (me *Me) Handle__NatTraversalRequest(req *Message, addr *net.UDPAddr) {
 		me.Handle__if__error(req, addr, "bad signature on NatTraversalRequest")
 		return
 	}
+
+	Log("NatTraversalRequest reçu de %s", addr)
 
 	// on récupère l'ip et le port cible
 	var targetIP net.IP
@@ -443,13 +699,14 @@ func (me *Me) Handle__NatTraversalRequest(req *Message, addr *net.UDPAddr) {
 		binary.BigEndian.PutUint16(body[16:18], uint16(addr.Port))
 	}
 	// on répond OK à l'emetteur
+	Log("Envoi d'un Ok à l'intermédiaire\n")
 	me.Handle__ping(req, addr)
 
+	Log("Envoi d'un NatTraversalRequest2 à %s\n", targetAddrStr)
 	go func() {
-		fmt.Printf(" NatTraversalRequest reçu de %s, on transmet à %s \n", addr, targetAddrStr)
 		err := me.Send__NatTraversalRequest2(targetUDP, body)
 		if err != nil {
-			fmt.Printf(" echec du relai vers %s : %v\n", targetAddrStr, err)
+			fmt.Printf("échec du relai vers %s : %v\n", targetAddrStr, err)
 		}
 	}()
 }
@@ -457,21 +714,35 @@ func (me *Me) Handle__NatTraversalRequest(req *Message, addr *net.UDPAddr) {
 // Handler pour les requetes de NatTraversalRequest2 : si on reèoit cette requête, on envoie un ping à l'adresse cible
 func (me *Me) Handle__NatTraversalRequest2(req *Message, addr *net.UDPAddr) {
 
+	me.Mutex.Lock()
+	session, exists := me.Sessions[addr.String()]
+
+	if !exists {
+		me.Mutex.Unlock()
+		fmt.Printf("NatTraversalRequest2 reçu de %s, mais pair inconnu. Ignoré.\n", addr)
+
+		me.Handle__if__error(req, addr, " please hello first")
+		return
+	}
+
+	if session.PublicKey == nil {
+		me.Mutex.Unlock()
+		fmt.Printf("NatTraversalRequest2 reçu de %s, mais clef du pair inconnue. Ignoré.\n", addr)
+
+		me.Handle__if__error(req, addr, "your key is nowhere to be found, error could be our fault")
+		return
+	}
+
+	// puisqu'on a reçu un message valide d'une session connue, on met à jour le LastSeen
+	session.LastSeen = time.Now()
+
+	me.Mutex.Unlock()
+
 	// vérification de la taille
 	if len(req.Body) != 6 && len(req.Body) != 18 {
 		fmt.Printf("NatTraversalRequest2 invalide reçu de %s (taille body incorrecte)\n", addr)
 
 		me.Handle__if__error(req, addr, "invalid body size (must be 6 or 18 bytes) in NatTraversalRequest2")
-		return
-	}
-
-	// récupération de la clé publique via la Session
-	me.Mutex.Lock()
-	session, exists := me.Sessions[addr.String()]
-	me.Mutex.Unlock()
-
-	if !exists || session.PublicKey == nil {
-		fmt.Printf("NatTraversalRequest2 reçu de %s, mais pair inconnu. Ignoré.\n", addr)
 		return
 	}
 
@@ -484,7 +755,9 @@ func (me *Me) Handle__NatTraversalRequest2(req *Message, addr *net.UDPAddr) {
 		return
 	}
 
-	fmt.Printf("Body du Nat2 (Bytes): %v\n", req.Body)
+	Log("NatTraversalRequest2 reçu de %s", addr)
+
+	fmt.Printf(" DEBUG :Body du Nat2 (Bytes): %v\n", req.Body)
 
 	// on récupère l'ip et le port
 	var targetIP net.IP
@@ -504,8 +777,9 @@ func (me *Me) Handle__NatTraversalRequest2(req *Message, addr *net.UDPAddr) {
 	targetAddrStr := fmt.Sprintf("%s:%d", targetIP.String(), targetPort)
 
 	// il faut envoyer un Ok à l'envoyeur du NatTraversalRequest2, on appelle notre fonction Handle__Ping qui fait exactement ca
+	Log("Envoi d'un Ok à l'intermédiaire")
 	me.Handle__ping(req, addr)
 
-	fmt.Printf("NatTraversalRequest2 reçu, envoi d'un ping à %s \n", targetAddrStr)
+	Log("Tentative de ping à la cible")
 	go me.Send__ping(targetAddrStr)
 }

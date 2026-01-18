@@ -58,11 +58,11 @@ func (me *Me) Send__with__timeout(destAddr string, key [32]byte, sendFunc func()
 					fmt.Println(failureMsg)
 				}
 
-				return nil, fmt.Errorf("timeout définitif après %v", currentTimeout)
+				return nil, fmt.Errorf("timeout définitif")
 			}
 
 			// on double le timeout et on reesaye
-			fmt.Printf("timeout de %v. nouvel essai\n", currentTimeout)
+			Log("timeout de %v. nouvel essai\n", currentTimeout)
 			currentTimeout *= 2
 		}
 	}
@@ -111,7 +111,7 @@ func (me *Me) Send__hello(destAddr string) error {
 		return err
 	}
 
-	customMsg := fmt.Sprintln(" Echec d'un Hello, veuillez réessayer avec l'option de NAT Traversal")
+	customMsg := fmt.Sprintln("Echec d'un Hello, veuillez réessayer avec l'option de NAT Traversal")
 
 	// on appelle notre fonction qui gère le timeout avec reply
 	_, err = me.Send__with__timeout(destAddr, waitKey, sendFunc, customMsg)
@@ -156,7 +156,7 @@ func (me *Me) Send__ping(destAddr string) error {
 }
 
 // fonction qui envoie un rootRequest à une destination
-func (me *Me) Send__RootRequest(destAddr string) error {
+func (me *Me) Send__RootRequest(destAddr string) ([]byte, error) {
 
 	// on genere l'ID de ce message
 	msgId := me.Generate__random__id()
@@ -184,8 +184,7 @@ func (me *Me) Send__RootRequest(destAddr string) error {
 	}
 
 	// on appelle notre fonction qui gère le timeout avec reply
-	_, err := me.Send__with__timeout(destAddr, waitKey, sendFunc, "")
-	return err
+	return me.Send__with__timeout(destAddr, waitKey, sendFunc, "")
 }
 
 // fonction qui envoie une datumRequest à une destination
