@@ -1,11 +1,15 @@
 package identity
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/ecdh"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
+	"io"
 	"math/big"
 )
 
@@ -94,4 +98,105 @@ func Verify__signature(pub *ecdsa.PublicKey, data []byte, signature []byte) bool
 	// on recalcule la signature pour pouvoir vérifier
 	hashed := sha256.Sum256(data)
 	return ecdsa.Verify(pub, hashed[:], &r, &s)
+}
+
+////////////////////////////////////////////
+/// FONCTIONS RELATIVES A LA CONFIDENTIALITE
+////////////////////////////////////////////
+
+/// ECHANGE DE CLE : DIFFIE-HELLMAN
+
+// GENERATION DE CLE EPHEMERE (X25519)
+// Renvoie la clé privée (à garder en mémoire le temps du handshake) et la publique (à envoyer)
+func Generate_Ephemeral_Key() (*ecdh.PrivateKey, []byte, error) {
+	curve := ecdh.X25519()
+	priv, err := curve.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, nil, err
+	}
+	pubKey := priv.PublicKey().Bytes()
+	return priv, pubKey, nil
+}
+
+// CALCUL DU SECRET PARTAGÉ
+// Prend ma clé privée et la clé publique reçue (en bytes) pour sortir la clé AES (hashée)
+func Compute_Shared_Secret(myPrivKey *ecdh.PrivateKey, receivedPubBytes []byte) ([]byte, error) {
+	// On utilise la courbe X25519 recommandée pour la sécurité par le NIST : RFC 7748
+	curve := ecdh.X25519()
+
+	// On transforme les bytes reçus en clé publique utilisable
+	receivedPubKey, err := curve.NewPublicKey(receivedPubBytes)
+	if err != nil {
+		return nil, fmt.Errorf("clé publique distante invalide: %v", err)
+	}
+
+	// On utilise la fonction fournie par crypto/ecdh pour calcuelr le secret partagé à partir de notre clé privée,
+	// et de la clé publique temporaire du peer avec lequel on communique
+	secret, err := myPrivKey.ECDH(receivedPubKey)
+	if err != nil {
+		return nil, fmt.Errorf("echec calcul ECDH: %v", err)
+	}
+
+	// On hash le secret pour avoir une clé AES propre de 32 octets
+	hash := sha256.Sum256(secret)
+	return hash[:], nil
+}
+
+// CHIFFREMENT (AES-GCM)
+// AES-GCM est le standard de chiffrement symétrique suggéré par le NIST (cf NIST SP 800-38D, 2007)
+// On utilise donc le pacakge aes fourni par go crypto/aes
+func Encrypt_AES(key []byte, plaintext []byte) ([]byte, error) {
+	// Création du bloc AES
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	// On utilise le mode GCM (Galois/Counter Mode) pour la confidentialité et l'intégrité
+	aesGCM, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	// Création d'un Nonce (Number used ONCE) aléatoire afin d'éviter les attaques par répétition
+	nonce := make([]byte, aesGCM.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return nil, err
+	}
+
+	// Chiffrement : Le résultat contient [Nonce + Ciphertext + Tag]
+	// rappel de la signature de la fonction : Seal(dst, nonce, plaintext, additionalData)
+	// Cette fonction chiffre le plaintext avec nonce, et l'append à la dst, puis append additionalData.
+	ciphertext := aesGCM.Seal(nonce, nonce, plaintext, nil)
+	return ciphertext, nil
+}
+
+// DECHIFFREMENT (AES-GCM)
+// On suit la logique du chiffrement pour déchiffrer
+func Decrypt_AES(key []byte, ciphertext []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	aesGCM, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	nonceSize := aesGCM.NonceSize()
+	if len(ciphertext) < nonceSize {
+		return nil, fmt.Errorf("ciphertext trop court")
+	}
+
+	// On sépare le nonce du reste
+	nonce, actualCiphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
+
+	// Déchiffrement et vérification du tag d'intégrité
+	plaintext, err := aesGCM.Open(nil, nonce, actualCiphertext, nil)
+	if err != nil {
+		return nil, fmt.Errorf("echec déchiffrement (mauvaise clé ou message altéré): %v", err)
+	}
+
+	return plaintext, nil
 }
