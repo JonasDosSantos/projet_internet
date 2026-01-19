@@ -14,12 +14,18 @@ const (
 	TypeNatTraversalRequest  = 4
 	TypeNatTraversalRequest2 = 5
 
-	TypeOk         = 128
-	Error          = 129
-	TypeHelloReply = 130
-	TypeRootReply  = 131
-	TypeDatum      = 132
-	TypeNoDatum    = 133
+	TypeOk             = 128
+	Error              = 129
+	TypeHelloReply     = 130
+	TypeRootReply      = 131
+	TypeDatum          = 132
+	TypeNoDatum        = 133
+	TypeEncryptedDatum = 134
+
+	TypeKeyExchange = 20
+
+	ExtensionNAT        = 1
+	ExtensionEncryption = 2
 )
 
 // structure des messages UDP

@@ -1,6 +1,7 @@
 package p2p
 
 import (
+	"crypto/ecdh"
 	"crypto/ecdsa"
 	"crypto/rand"
 	"encoding/binary"
@@ -50,8 +51,19 @@ type Me struct {
 
 // Structure pour suivre l'état d'un pair
 type PeerSession struct {
+	// Des informations nécessaires pour le timeout
 	LastSeen  time.Time
 	PublicKey *ecdsa.PublicKey
+
+	// Des informations nécessaires pour le handshake Diffie Hellman
+	// La clé AES calculée
+	SharedKey []byte
+
+	// La clé privée temporaire pour cet échange
+	EphemeralPriv *ecdh.PrivateKey // Ma clé privée temporaire pour cet échange
+
+	// Pour savoir si le handshake est fini
+	IsEncrypted bool
 }
 
 func (me *Me) Generate__random__id() uint32 {
@@ -186,6 +198,12 @@ func (me *Me) Listen__loop() {
 
 		case TypeDatum:
 			me.Handle__Datum(msg, addr)
+
+		case TypeKeyExchange:
+			me.Handle__KeyExchange(msg, addr)
+
+		case TypeEncryptedDatum:
+			me.Handle__EncryptedDatum(msg, addr)
 
 		// mauvais type
 		default:

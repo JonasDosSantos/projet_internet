@@ -1,6 +1,8 @@
 package p2p
 
 import (
+	"crypto/ecdh"
+	"crypto/rand"
 	"encoding/binary"
 	"fmt"
 	"net"
@@ -86,8 +88,13 @@ func (me *Me) Send__hello(destAddr string) error {
 	// on crée une "action", c'est ce qui est transmis à Send__with__timeout
 	sendFunc := func() error {
 
+		var extensions uint32 = 0
+		extensions |= ExtensionNAT
+		extensions |= ExtensionEncryption
+
 		// le corps du message est Extensions + Name (d'où 4octets + taille de Name en octets)
 		body := make([]byte, 4+len(me.PeerName))
+		binary.BigEndian.PutUint32(body[0:4], extensions)
 
 		// on écrit le nom du Peer à la fin (les 4 premiers octets sont vides pour le moment)
 		copy(body[4:], []byte(me.PeerName))
@@ -323,5 +330,68 @@ func (me *Me) Send__NatTraversalRequest2(destAddr *net.UDPAddr, body []byte) err
 	}
 
 	_, err := me.Send__with__timeout(destStr, waitKey, sendFunc, "")
+	return err
+}
+
+// Send__KeyExchange initie la première étape du protocole de confidentialité (Handshake).
+//
+// OBJECTIF : Envoyer notre "demi-clé" publique temporaire au pair distant.
+// SÉCURITÉ : Le message est signé avec notre clé d'identité (ECDSA) pour empêcher
+//
+//	les attaques Man-in-the-Middle (MITM).
+func (me *Me) Send__KeyExchange(destAddr string) error {
+
+	// On verrouille pour lire la map des sessions de manière thread-safe
+	me.Mutex.Lock()
+	session, exists := me.Sessions[destAddr]
+	me.Mutex.Unlock()
+
+	if !exists {
+		return fmt.Errorf("session inconnue")
+	}
+
+	var pubKey []byte
+
+	// On verrouille car on va lire/écrire dans l'objet 'session'
+	me.Mutex.Lock()
+	if session.EphemeralPriv != nil {
+		// Cas A : On a déjà une clé, on la réutilise
+		pubKey = session.EphemeralPriv.PublicKey().Bytes()
+
+	} else {
+		// Cas B : On en génère une nouvelle
+		curve := ecdh.X25519()
+		privKey, err := curve.GenerateKey(rand.Reader)
+		if err != nil {
+			me.Mutex.Unlock()
+			return err
+		}
+		session.EphemeralPriv = privKey
+		pubKey = privKey.PublicKey().Bytes()
+	}
+	me.Mutex.Unlock()
+
+	// On construit le message, on lui donne le type associé à l'échange de clé
+	// et on envoie la clé publique que l'on vient de calculer dans le body
+	msg := Message{
+		Id:   me.Generate__random__id(),
+		Type: TypeKeyExchange,
+		Body: pubKey,
+	}
+
+	// On signe le message pour contrer les attaque Man in the Middle
+	sig, errSig := identity.Sign(me.PrivateKey, msg.Serialize())
+	if errSig != nil {
+		return fmt.Errorf("echec signature: %v", errSig)
+	}
+	msg.Signature = sig
+
+	// On envoie le message
+	addr, err := net.ResolveUDPAddr("udp", destAddr)
+	if err != nil {
+		return err
+	}
+
+	_, err = me.Conn.WriteToUDP(msg.Serialize(), addr)
 	return err
 }

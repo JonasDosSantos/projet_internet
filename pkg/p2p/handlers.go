@@ -109,6 +109,12 @@ func (me *Me) Handle__hello(req *Message, addr *net.UDPAddr) {
 
 	// on cree le body
 	body := make([]byte, 4+len(me.PeerName))
+
+	var extensions uint32 = 0
+	extensions |= ExtensionNAT
+	extensions |= ExtensionEncryption
+	binary.BigEndian.PutUint32(body[0:4], extensions)
+
 	copy(body[4:], []byte(me.PeerName))
 
 	// on cree la struct Message de la réponse
@@ -122,6 +128,14 @@ func (me *Me) Handle__hello(req *Message, addr *net.UDPAddr) {
 	sig, _ := identity.Sign(me.PrivateKey, unsignedData)
 	reply.Signature = sig
 	me.Conn.WriteToUDP(reply.Serialize(), addr)
+
+	receivedExt := binary.BigEndian.Uint32(req.Body[0:4])
+
+	if (receivedExt & ExtensionEncryption) != 0 {
+		fmt.Printf("%s propose le chiffrement (Hello). J'initie l'échange.\n", sender)
+		// On lance l'échange de clé de notre côté
+		go me.Send__KeyExchange(addr.String())
+	}
 }
 
 // fonction qui gère la réception d'un HelloReply
@@ -206,6 +220,17 @@ func (me *Me) Handle__helloReply(req *Message, addr *net.UDPAddr) {
 	}
 	// on lache le verrou
 	me.PendingLock.Unlock()
+
+	// On lit les extensions du message reçu
+	extensions := binary.BigEndian.Uint32(req.Body[0:4])
+
+	// On vérifie si le bit Encryption est activé
+	if (extensions & ExtensionEncryption) != 0 {
+		fmt.Printf("%s supporte le chiffrement !\n", sender)
+
+		// On lance l'échange de clés (dans une goroutine pour ne pas bloquer)
+		go me.Send__KeyExchange(addr.String())
+	}
 }
 
 // fonction qui gère la réception d'un ping
@@ -393,6 +418,22 @@ func (me *Me) Handle__DatumRequest(req *Message, addr *net.UDPAddr) {
 		replyBody := make([]byte, 32+len(data))
 		copy(replyBody[0:32], requestedHash[:])
 		copy(replyBody[32:], data)
+
+		if session.IsEncrypted {
+			// On chiffre le tout
+			encryptedBody, err := identity.Encrypt_AES(session.SharedKey, replyBody)
+			if err == nil {
+				// On envoie avec le type EncryptedDatum
+				reply := Message{
+					Id:   req.Id,
+					Type: TypeEncryptedDatum,
+					Body: encryptedBody,
+				}
+				me.Conn.WriteToUDP(reply.Serialize(), addr)
+				Log("Envoi d'un Datum CHIFFRÉ à %s", addr)
+				return
+			}
+		}
 
 		reply := Message{
 			Id:   req.Id,
@@ -782,4 +823,87 @@ func (me *Me) Handle__NatTraversalRequest2(req *Message, addr *net.UDPAddr) {
 
 	Log("Tentative de ping à la cible")
 	go me.Send__ping(targetAddrStr)
+}
+
+func (me *Me) Handle__KeyExchange(req *Message, addr *net.UDPAddr) {
+	// On verrouille pour lire la map des sessions de manière thread-safe
+	me.Mutex.Lock()
+	session, exists := me.Sessions[addr.String()]
+	me.Mutex.Unlock()
+
+	if !exists || session.PublicKey == nil {
+		return
+	}
+
+	// On vérifie d'abord la signature du message envoyé
+	dataToVerify := req.Serialize()[:7+len(req.Body)]
+	if !identity.Verify__signature(session.PublicKey, dataToVerify, req.Signature) {
+		fmt.Printf("ALERTE: Signature invalide pour KeyExchange de %s\n", addr)
+		return
+	}
+
+	me.Mutex.Lock()
+	defer me.Mutex.Unlock()
+
+	// Si on reçoit la clé de l'autre AVANT d'avoir décidé d'envoyer la nôtre,
+	// on doit quand même générer notre moitié du secret pour faire le calcul.
+	if session.EphemeralPriv == nil {
+		// On génère la clé, MAIS ON NE L'ENVOIE PAS ICI.
+		// C'est le rôle de Hello/HelloReply de gérer l'envoi.
+		priv, _, err := identity.Generate_Ephemeral_Key()
+		if err != nil {
+			return
+		}
+		session.EphemeralPriv = priv
+	}
+
+	// Calcul du secret
+	sharedKey, err := identity.Compute_Shared_Secret(session.EphemeralPriv, req.Body)
+	if err != nil {
+		fmt.Printf("Erreur crypto : %v\n", err)
+		return
+	}
+
+	// On enregistre les informations pour la session
+	session.SharedKey = sharedKey
+	session.IsEncrypted = true
+
+	// On garde EphemeralPriv tant que la session est active ou on le supprime
+	// Pour l'instant, on peut le laisser à nil pour dire "c'est fini"
+
+	//////////////////////////////////////////////
+	//////////////////////////////////////////////
+	//////////////////////////////////////////////
+	// session.EphemeralPriv = nil
+
+	if Verbose {
+		fmt.Printf("SECRET ÉTABLI AVEC %s (Passivement)\n", addr)
+	}
+}
+
+func (me *Me) Handle__EncryptedDatum(req *Message, addr *net.UDPAddr) {
+	me.Mutex.Lock()
+	session, exists := me.Sessions[addr.String()]
+	me.Mutex.Unlock()
+
+	if !exists || !session.IsEncrypted {
+		fmt.Println("Reçu message chiffré d'une session non sécurisée, ignoré.")
+		return
+	}
+
+	// Déchiffrement
+	decryptedBody, err := identity.Decrypt_AES(session.SharedKey, req.Body)
+	if err != nil {
+		fmt.Printf("Erreur déchiffrement de %s : %v\n", addr, err)
+		return
+	}
+
+	Log("Message déchiffré avec succès de %s", addr)
+
+	// On "triche" : on modifie le message pour faire croire qu'il était en clair
+	req.Body = decryptedBody
+	req.Type = TypeDatum // On le remet en type normal (132)
+
+	// On le passe au handler normal qui va gérer la tuyauterie (pipes)
+	me.Handle__Datum(req, addr)
 }
