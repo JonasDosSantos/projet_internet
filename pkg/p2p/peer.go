@@ -140,7 +140,7 @@ func (me *Me) Listen__loop() {
 			continue
 		}
 		if msg.Type != TypeDatum {
-			Log("[DEBUG] Received : type: %d, id: %d, addr: %s\n", msg.Type, msg.Id, addr)
+			Log("\n[DEBUG] Received : type: %d, id: %d, addr: %s", msg.Type, msg.Id, addr)
 		}
 
 		// on agit différement selon le Type de message
@@ -154,7 +154,7 @@ func (me *Me) Listen__loop() {
 			me.Handle__ping(msg, addr)
 
 		case TypeHello:
-			me.Handle__hello(msg, addr)
+			me.Handle__hellos(msg, addr)
 
 		case TypeRootRequest:
 			me.Handle__RootRequest(msg, addr)
@@ -173,7 +173,7 @@ func (me *Me) Listen__loop() {
 			me.Handle__error(msg, addr)
 
 		case TypeHelloReply:
-			me.Handle__helloReply(msg, addr)
+			me.Handle__hellos(msg, addr)
 
 		case TypeOk:
 			me.Handle__Ok(msg, addr)

@@ -74,7 +74,7 @@ func (me *Me) List__active__peers() []string {
 
 			raw_key := fmt.Sprintf("%x", session.PublicKey)
 
-			keys = fmt.Sprintf("%s...", raw_key[:12])
+			keys = fmt.Sprintf("%x...", raw_key[:8])
 		}
 
 		entry := fmt.Sprintf("%s : %s", addr, keys)

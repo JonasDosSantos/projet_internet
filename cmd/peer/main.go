@@ -405,7 +405,7 @@ func main() {
 			go me.Print__Tree(targetAddr)
 
 		case "exit":
-			LogMsg("fin du peer")
+			LogMsg("fin du peer\n")
 			return
 
 		default:
