@@ -3,6 +3,7 @@ package p2p
 import (
 	"fmt"
 	"net"
+	"project/pkg/identity"
 	"time"
 )
 
@@ -33,14 +34,14 @@ func (me *Me) Start__maintenance__loop() {
 
 			// Après 5 minutes : expiration
 			if diff > 5*time.Minute {
-				fmt.Printf("Timeout : Session expirée avec %s (inactif depuis %s)\n", addr, diff)
+				fmt.Printf("Timeout : Session expirée avec %s (inactif depuis %s)", addr, diff)
 				delete(me.Sessions, addr)
 				continue
 			}
 
 			// Après 3 minutes : keepalive
 			if diff > 3*time.Minute {
-				Log("Keep-alive : Envoi Ping automatique à %s\n", addr)
+				Verbose_log("Keep-alive : Envoi Ping automatique à %s", addr)
 				// On lance le ping via la fonction "send__ping" dans une goroutine pour ne pas bloquer le mutex
 				go me.Send__ping(addr)
 			}
@@ -48,7 +49,7 @@ func (me *Me) Start__maintenance__loop() {
 		me.Mutex.Unlock()
 
 		if ping_server {
-			Log("Keep-alive : Envoi Hello au serveur")
+			Verbose_log("Keep-alive : Envoi Hello au serveur")
 			go me.Send__hello(me.ServerUDPAddr)
 		}
 	}
@@ -68,16 +69,21 @@ func (me *Me) List__active__peers() []string {
 
 	for addr, session := range me.Sessions {
 
-		keys := "no key"
+		key := "no key"
 
 		if session.PublicKey != nil {
 
-			raw_key := fmt.Sprintf("%x", session.PublicKey)
+			pubBytes := identity.PublicKey__to__bytes(session.PublicKey)
 
-			keys = fmt.Sprintf("%x...", raw_key[:8])
+			key = fmt.Sprintf("clef publique (signatures) %x...", pubBytes[:32])
 		}
 
-		entry := fmt.Sprintf("%s : %s", addr, keys)
+		encryptionStatus := ""
+		if session.IsEncrypted {
+			encryptionStatus = "Chiffrement via échange de clef DH"
+		}
+
+		entry := fmt.Sprintf("- %-25s : %-25s + %s", addr, key, encryptionStatus)
 		activeList = append(activeList, entry)
 	}
 

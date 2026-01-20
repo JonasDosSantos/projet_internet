@@ -10,6 +10,20 @@ import (
 	"time"
 )
 
+// fonction de base pour envoyer un message en UDP: on "redéfinit" une fonction pour centraliser les envois
+// + pratique pour les Verbose_log de DEBUG
+func (me *Me) Send__UDP(msg Message, dest *net.UDPAddr) error {
+
+	if msg.Type != TypeDatum && msg.Type != TypeDatumRequest && msg.Type != TypeEncryptedDatum {
+		Verbose_log("[DEBUG] Sent  : type: %s, id: %d, dest: %s\n", msg__type__to__string(msg.Type), msg.Id, dest)
+
+	}
+	data := msg.Serialize()
+	_, err := me.Conn.WriteToUDP(data, dest)
+
+	return err
+}
+
 // fonction qui sert à envoyer un message et vérifie si le timeout est atteint, auquel cas réessaye jusqu'à 3 fois.
 // les paramètres sont: la destiantion, une "clef" pour le pipe (hash pour les Datum, Id sinon), la fonction Sender (Send__hello, ...)
 func (me *Me) Send__with__timeout(destAddr string, key [32]byte, sendFunc func() error, failureMsg string) ([]byte, error) {
@@ -64,7 +78,7 @@ func (me *Me) Send__with__timeout(destAddr string, key [32]byte, sendFunc func()
 			}
 
 			// on double le timeout et on reesaye
-			Log("timeout de %v. nouvel essai\n", currentTimeout)
+			Verbose_log("timeout de %v. nouvel essai\n", currentTimeout)
 			currentTimeout *= 2
 		}
 	}
@@ -114,8 +128,7 @@ func (me *Me) Send__hello(destAddr string) error {
 		msg.Signature = sig
 
 		// Envoie les octets finaux sur le réseau
-		_, err = me.Conn.WriteToUDP(msg.Serialize(), udpAddr)
-		return err
+		return me.Send__UDP(msg, udpAddr)
 	}
 
 	customMsg := fmt.Sprintln("Echec d'un Hello, veuillez réessayer avec l'option de NAT Traversal")
@@ -149,12 +162,8 @@ func (me *Me) Send__ping(destAddr string) error {
 			Body: []byte{},
 		}
 
-		// on transforme la struct en chaine d'octets
-		data := msg.Serialize()
-
 		// on envoie au destinataire
-		_, err = me.Conn.WriteToUDP(data, udpAddr)
-		return err
+		return me.Send__UDP(msg, udpAddr)
 	}
 
 	// on appelle notre fonction qui gère le timeout avec reply
@@ -186,8 +195,7 @@ func (me *Me) Send__RootRequest(destAddr string) ([]byte, error) {
 		}
 
 		// Pas de signature nécessaire pour la requête
-		_, err = me.Conn.WriteToUDP(msg.Serialize(), udpAddr)
-		return err
+		return me.Send__UDP(msg, udpAddr)
 	}
 
 	// on appelle notre fonction qui gère le timeout avec reply
@@ -215,8 +223,7 @@ func (me *Me) Send__DatumRequest(destAddr string, hash [32]byte) ([]byte, error)
 			Body: body,
 		}
 
-		_, err = me.Conn.WriteToUDP(msg.Serialize(), udpAddr)
-		return err
+		return me.Send__UDP(msg, udpAddr)
 	}
 
 	return me.Send__with__timeout(destAddr, hash, sendFunc, "")
@@ -232,7 +239,7 @@ func (me *Me) Send__NatTraversalRequest(targetAddr string, destAddr string) erro
 	sendFunc := func() error {
 
 		// on prépapre l'adresse pour l'envoi
-		udpaddr, err := net.ResolveUDPAddr("udp", destAddr)
+		udpAddr, err := net.ResolveUDPAddr("udp", destAddr)
 		if err != nil {
 			return err
 		}
@@ -288,8 +295,7 @@ func (me *Me) Send__NatTraversalRequest(targetAddr string, destAddr string) erro
 		msg.Signature = sig
 
 		// Envoie les octets finaux sur le réseau
-		_, err = me.Conn.WriteToUDP(msg.Serialize(), udpaddr)
-		return err
+		return me.Send__UDP(msg, udpAddr)
 	}
 
 	/// on envoie avec notre fonction d'envoi
@@ -325,8 +331,7 @@ func (me *Me) Send__NatTraversalRequest2(destAddr *net.UDPAddr, body []byte) err
 		msg.Signature = sig
 
 		// Envoie les octets finaux sur le réseau
-		_, err = me.Conn.WriteToUDP(msg.Serialize(), destAddr)
-		return err
+		return me.Send__UDP(msg, destAddr)
 	}
 
 	_, err := me.Send__with__timeout(destStr, waitKey, sendFunc, "")
@@ -387,11 +392,10 @@ func (me *Me) Send__KeyExchange(destAddr string) error {
 	msg.Signature = sig
 
 	// On envoie le message
-	addr, err := net.ResolveUDPAddr("udp", destAddr)
+	udpAddr, err := net.ResolveUDPAddr("udp", destAddr)
 	if err != nil {
 		return err
 	}
 
-	_, err = me.Conn.WriteToUDP(msg.Serialize(), addr)
-	return err
+	return me.Send__UDP(msg, udpAddr)
 }

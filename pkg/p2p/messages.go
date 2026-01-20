@@ -106,3 +106,35 @@ func Deserialize(data []byte) (*Message, error) {
 		Signature: signature,
 	}, nil
 }
+
+// fonction pour convertir le type d'un message en string
+func msg__type__to__string(msgType uint8) string {
+	switch msgType {
+	case TypePing:
+		return "Ping"
+	case TypeOk:
+		return "Ok"
+	case TypeHello:
+		return "Hello"
+	case TypeHelloReply:
+		return "HelloReply"
+	case Error:
+		return "Error"
+	case TypeRootRequest:
+		return "RootRequest"
+	case TypeRootReply:
+		return "RootReply"
+	case TypeDatumRequest:
+		return "DatumRequest"
+	case TypeDatum:
+		return "Datum"
+	case TypeNoDatum:
+		return "NoDatum"
+	case TypeNatTraversalRequest:
+		return "NatTraversalRequest"
+	case TypeNatTraversalRequest2:
+		return "NatTraversalRequest2"
+	default:
+		return fmt.Sprintf("Unknown(%d)", msgType)
+	}
+}

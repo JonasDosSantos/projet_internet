@@ -104,7 +104,7 @@ func (me *Me) Handle__Ok(req *Message, addr *net.UDPAddr) {
 	// on lache le verrou
 	me.PendingLock.Unlock()
 
-	Log("Ok reçu de %s", addr)
+	Verbose_log("Ok reçu de %s", addr)
 }
 
 // handler pour les hellos (hello et helloReply)
@@ -163,9 +163,9 @@ func (me *Me) Handle__hellos(req *Message, addr *net.UDPAddr) {
 	if exists && session.PublicKey != nil {
 		// alors c'est un KeepAlive
 		if isReply {
-			Log("KeepAlive : HelloReply reçu de %s", sender)
+			Verbose_log("KeepAlive : HelloReply reçu de %s", sender)
 		} else {
-			Log("KeepAlive : Hello reçu de %s", sender)
+			Verbose_log("KeepAlive : Hello reçu de %s", sender)
 		}
 		session.LastSeen = time.Now()
 	} else {
@@ -238,8 +238,7 @@ func (me *Me) Handle__hellos(req *Message, addr *net.UDPAddr) {
 		unsignedData := reply.Serialize()
 		sig, _ := identity.Sign(me.PrivateKey, unsignedData)
 		reply.Signature = sig
-		me.Conn.WriteToUDP(reply.Serialize(), addr)
-
+		me.Send__UDP(reply, addr)
 	}
 
 	// On lit les extensions du message reçu
@@ -280,13 +279,8 @@ func (me *Me) Handle__ping(req *Message, addr *net.UDPAddr) {
 		Body: []byte{},
 	}
 
-	// on transforme le message en chaine d'octets
-	data := reply.Serialize()
-
-	// on renvoie le OK à l'emetteur
-	me.Conn.WriteToUDP(data, addr)
-	Log("Ping reçu de %s", addr)
-	Log("Envoi d'un Ok à %s", addr)
+	Verbose_log("Ping reçu de %s", addr)
+	me.Send__UDP(reply, addr)
 }
 
 // fonction qui envoie une erreur à une destination, en paramètre: la destination et le message Human-Readable
@@ -299,11 +293,7 @@ func (me *Me) Handle__if__error(req *Message, addr *net.UDPAddr, errorMsg string
 		Body: []byte(errorMsg),
 	}
 
-	// on transforme le message en chaine d'octets
-	data := reply.Serialize()
-
-	// on renvoie l'erreur à l'emetteur
-	me.Conn.WriteToUDP(data, addr)
+	me.Send__UDP(reply, addr)
 }
 
 // focntion qui gère les messages d'erreurs recus
@@ -365,10 +355,9 @@ func (me *Me) Handle__RootRequest(req *Message, addr *net.UDPAddr) {
 	}
 	reply.Signature = sig
 
-	// Envoi
-	me.Conn.WriteToUDP(reply.Serialize(), addr)
+	me.Send__UDP(reply, addr)
 
-	Log("RootRequest reçu de %s", addr)
+	Verbose_log("RootRequest reçu de %s", addr)
 }
 
 // Handler pour les DatumRequest
@@ -379,7 +368,7 @@ func (me *Me) Handle__DatumRequest(req *Message, addr *net.UDPAddr) {
 		return
 	}
 
-	Log("DatumRequest reçu de %s", addr)
+	Verbose_log("DatumRequest reçu de %s", addr)
 
 	// On récupère le hash demandé
 	var requestedHash [32]byte
@@ -420,11 +409,13 @@ func (me *Me) Handle__DatumRequest(req *Message, addr *net.UDPAddr) {
 					Type: TypeEncryptedDatum,
 					Body: encryptedBody,
 				}
-				me.Conn.WriteToUDP(reply.Serialize(), addr)
-				Log("Envoi d'un Datum CHIFFRÉ à %s", addr)
+				me.Send__UDP(reply, addr)
+				Verbose_log("Envoi d'un Datum CHIFFRÉ à %s", addr)
 				return
 			}
 		}
+
+		//sinon on envoi en normal
 
 		reply := Message{
 			Id:   req.Id,
@@ -432,8 +423,8 @@ func (me *Me) Handle__DatumRequest(req *Message, addr *net.UDPAddr) {
 			Body: replyBody,
 		}
 
-		me.Conn.WriteToUDP(reply.Serialize(), addr)
-		Log("Envoi d'un Datum à %s", addr)
+		me.Send__UDP(reply, addr)
+		Verbose_log("Envoi d'un Datum à %s", addr)
 
 	} else {
 		// si on a pas trouvé ce hash
@@ -450,8 +441,8 @@ func (me *Me) Handle__DatumRequest(req *Message, addr *net.UDPAddr) {
 
 		if err == nil {
 			reply.Signature = sig
-			me.Conn.WriteToUDP(reply.Serialize(), addr)
-			Log("Envoi d'un NoDatum à %s", addr)
+			me.Send__UDP(reply, addr)
+			Verbose_log("Envoi d'un NoDatum à %s", addr)
 		}
 	}
 }
@@ -464,11 +455,11 @@ func (me *Me) Handle__RootReply(req *Message, addr *net.UDPAddr) {
 		return
 	}
 
-	Log("RootReply reçu de %s", addr)
+	Verbose_log("RootReply reçu de %s", addr)
 
 	// mise à jour du RootHash de notre DataBase
 	copy(me.RootHash[:], req.Body[:32])
-	Log("roothash mis à jour: %x\n", me.RootHash)
+	Verbose_log("roothash mis à jour: %x\n", me.RootHash)
 
 	// je prend le verrou sur la map de pipe
 	me.PendingLock.Lock()
@@ -540,7 +531,7 @@ func (me *Me) Handle__NoDatum(req *Message, addr *net.UDPAddr) {
 
 	missingHash := req.Body[:32]
 
-	Log("NoDatum reçu de %s, le peer ne possède pas le hash : %x\n", addr, missingHash[:5])
+	Verbose_log("NoDatum reçu de %s, le peer ne possède pas le hash : %x\n", addr, missingHash[:5])
 
 	// On prépare la clé pour la chercher dans la map
 	var hashArray [32]byte
@@ -571,7 +562,7 @@ func (me *Me) Handle__NatTraversalRequest(req *Message, addr *net.UDPAddr) {
 		return
 	}
 
-	Log("NatTraversalRequest reçu de %s", addr)
+	Verbose_log("NatTraversalRequest reçu de %s", addr)
 
 	// on récupère l'ip et le port cible
 	var targetIP net.IP
@@ -610,10 +601,10 @@ func (me *Me) Handle__NatTraversalRequest(req *Message, addr *net.UDPAddr) {
 		binary.BigEndian.PutUint16(body[16:18], uint16(addr.Port))
 	}
 	// on répond OK à l'emetteur
-	Log("Envoi d'un Ok à l'intermédiaire\n")
+	Verbose_log("Envoi d'un Ok à l'intermédiaire\n")
 	me.Handle__ping(req, addr)
 
-	Log("Envoi d'un NatTraversalRequest2 à %s\n", targetAddrStr)
+	Verbose_log("Envoi d'un NatTraversalRequest2 à %s\n", targetAddrStr)
 	go func() {
 		err := me.Send__NatTraversalRequest2(targetUDP, body)
 		if err != nil {
@@ -630,7 +621,7 @@ func (me *Me) Handle__NatTraversalRequest2(req *Message, addr *net.UDPAddr) {
 		return
 	}
 
-	Log("NatTraversalRequest2 reçu de %s", addr)
+	Verbose_log("NatTraversalRequest2 reçu de %s", addr)
 
 	fmt.Printf(" DEBUG :Body du Nat2 (Bytes): %v\n", req.Body)
 
@@ -652,10 +643,10 @@ func (me *Me) Handle__NatTraversalRequest2(req *Message, addr *net.UDPAddr) {
 	targetAddrStr := fmt.Sprintf("%s:%d", targetIP.String(), targetPort)
 
 	// il faut envoyer un Ok à l'envoyeur du NatTraversalRequest2, on appelle notre fonction Handle__Ping qui fait exactement ca
-	Log("Envoi d'un Ok à l'intermédiaire")
+	Verbose_log("Envoi d'un Ok à l'intermédiaire")
 	me.Handle__ping(req, addr)
 
-	Log("Tentative de ping à la cible")
+	Verbose_log("Tentative de ping à la cible")
 	go me.Send__ping(targetAddrStr)
 }
 
@@ -732,7 +723,7 @@ func (me *Me) Handle__EncryptedDatum(req *Message, addr *net.UDPAddr) {
 		return
 	}
 
-	Log("Message déchiffré avec succès de %s", addr)
+	Verbose_log("Message déchiffré avec succès de %s", addr)
 
 	// On "triche" : on modifie le message pour faire croire qu'il était en clair
 	req.Body = decryptedBody

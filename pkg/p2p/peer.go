@@ -15,10 +15,16 @@ import (
 var Verbose bool = false
 
 // fonction de log liée à la variable Verbose
-func Log(format string, a ...interface{}) {
+func Verbose_log(format string, a ...interface{}) {
 	if Verbose {
-		fmt.Printf(format+"\n", a...)
+		LogMsg(format+"\n", a...)
 	}
+}
+
+// fonction utilitaire pour afficher HH:MM:SS au début de chaque print
+func LogMsg(format string, a ...interface{}) {
+	timestamp := time.Now().Format("15:04:05")
+	fmt.Printf(timestamp+" "+format, a...)
 }
 
 type Me struct {
@@ -152,7 +158,7 @@ func (me *Me) Listen__loop() {
 			continue
 		}
 		if msg.Type != TypeDatum {
-			Log("\n[DEBUG] Received : type: %d, id: %d, addr: %s", msg.Type, msg.Id, addr)
+			Verbose_log("[DEBUG] Received : type: %s, id: %d, addr: %s", msg__type__to__string(msg.Type), msg.Id, addr)
 		}
 
 		// on agit différement selon le Type de message

@@ -131,7 +131,7 @@ func main() {
 			// alors on charge le tout dans notre DataBase
 			me.Load__file__system(merkle_tree)
 		} else {
-			LogMsg("erreur chargement du dossier voulu : %v\n", err)
+			p2p.LogMsg("erreur chargement du dossier voulu : %v\n", err)
 		}
 	}
 
@@ -186,7 +186,12 @@ func main() {
 		case "info":
 			fmt.Printf("MES INFOS: \n")
 			fmt.Printf("Nom : %s\n", my_name)
-			fmt.Printf("Port : %d\n", my_UDP_port)
+			myAddr, err := find__name__from__addr(my_name, serverURL)
+			if err != nil {
+				fmt.Printf("Erreur : %v\n", err)
+				continue
+			}
+			fmt.Printf("Adresse : %s\n", myAddr)
 			if me.RootHash == [32]byte{} {
 				fmt.Println("RootHash : no roothash")
 			} else {
@@ -196,9 +201,9 @@ func main() {
 		case "register":
 			err = client.Register(serverURL, my_name, pubKeyBytes)
 			if err != nil {
-				LogMsg("erreur Register (%v)\n", err)
+				p2p.LogMsg("erreur Register (%v)\n", err)
 			} else {
-				LogMsg("enregistrement (HTTP) auprès du serveur réussi")
+				p2p.LogMsg("enregistrement (HTTP) auprès du serveur réussi")
 			}
 
 		case "active":
@@ -206,9 +211,9 @@ func main() {
 			active_list := me.List__active__peers()
 
 			if len(active_list) == 0 {
-				LogMsg("aucune session active\n")
+				p2p.LogMsg("aucune session active\n")
 			} else {
-				LogMsg("Seessions actives: \n")
+				p2p.LogMsg("Seessions actives: \n")
 
 				for i := 0; i < len(active_list); i++ {
 					fmt.Printf("- %s\n", active_list[i])
@@ -219,9 +224,9 @@ func main() {
 			// appel au serveur pour demander la liste de pair qu'il a
 			list, err := client.Get__peer__list(serverURL)
 			if err != nil {
-				LogMsg("Erreur get__peer_list :", err)
+				p2p.LogMsg("Erreur get__peer_list :", err)
 			} else {
-				LogMsg("peers dans l'annuaire du serveur: \n")
+				p2p.LogMsg("peers dans l'annuaire du serveur: \n")
 				for i := 0; i < len(list); i++ {
 					p := list[i]
 					fmt.Printf("- %s\n", p)
@@ -238,9 +243,9 @@ func main() {
 			// appel au serveur pour obtenir la clef publique d'un pair
 			key, err := client.Get__publicKey(serverURL, peerName)
 			if err != nil {
-				LogMsg(" erreur get_pubKey: %v\n", err)
+				p2p.LogMsg(" erreur get_pubKey: %v\n", err)
 			} else {
-				LogMsg("clef publique de %s :\n%x\n", peerName, key)
+				p2p.LogMsg("clef publique de %s :\n%x\n", peerName, key)
 			}
 
 		case "addr":
@@ -253,9 +258,9 @@ func main() {
 			// appel au serveur poir obtenir les adresses d'un pair
 			addrs, err := client.Get__peer__adresses(serverURL, peerName)
 			if err != nil {
-				LogMsg(" erreur get__peer__adresses : %v\n", err)
+				p2p.LogMsg(" erreur get__peer__adresses : %v\n", err)
 			} else {
-				LogMsg(" adresses de %s :\n", peerName)
+				p2p.LogMsg(" adresses de %s :\n", peerName)
 
 				for i := 0; i < len(addrs); i++ {
 					addr := addrs[i]
@@ -268,9 +273,16 @@ func main() {
 				fmt.Println("usage: hello <ip:port>")
 				continue
 			}
-			LogMsg("envoi d'un hello à %s\n", args[0])
+
+			destAddr, err := find__name__from__addr(args[0], serverURL)
+			if err != nil {
+				fmt.Printf("Erreur : %v\n", err)
+				continue
+			}
+
+			p2p.LogMsg("envoi d'un hello à %s\n", destAddr)
 			// on appelle notre fonction dédiée
-			me.Send__hello(args[0])
+			me.Send__hello(destAddr)
 
 		case "ping":
 			if len(args) < 1 {
@@ -278,20 +290,33 @@ func main() {
 				continue
 			}
 
-			LogMsg("envoi d'un ping à %s\n", args[0])
+			destAddr, err := find__name__from__addr(args[0], serverURL)
+			if err != nil {
+				fmt.Printf("Erreur : %v\n", err)
+				continue
+			}
+
+			p2p.LogMsg("envoi d'un ping à %s\n", destAddr)
 
 			// on appelle notre fonction dédiée
-			me.Send__ping(args[0])
+			me.Send__ping(destAddr)
 
 		case "root":
 			if len(args) < 1 {
 				fmt.Println("usage: root <ip:port>")
 				continue
 			}
-			LogMsg("RootRequest envoyé à %s ", args[0])
+
+			destAddr, err := find__name__from__addr(args[0], serverURL)
+			if err != nil {
+				fmt.Printf("Erreur : %v\n", err)
+				continue
+			}
+
+			p2p.LogMsg("RootRequest envoyé à %s ", destAddr)
 
 			// on utilise notre fonction dédiée
-			me.Send__RootRequest(args[0])
+			me.Send__RootRequest(destAddr)
 
 		case "load":
 			if len(args) < 1 {
@@ -317,8 +342,12 @@ func main() {
 				fmt.Println("usage: download <ip:port> [path_file]")
 				continue
 			}
-			// la destination est le premier argument
-			destAddr := args[0]
+
+			destAddr, err := find__name__from__addr(args[0], serverURL)
+			if err != nil {
+				fmt.Printf("Erreur : %v\n", err)
+				continue
+			}
 
 			targetPath := ""
 			if len(args) > 1 {
@@ -369,7 +398,7 @@ func main() {
 				continue
 			}
 
-			LogMsg("téléchargement terminé en %v.\n", time.Since(start))
+			p2p.LogMsg("téléchargement terminé en %v.\n", time.Since(start))
 
 		case "nattraversal":
 			if len(args) < 1 {
@@ -377,8 +406,11 @@ func main() {
 				continue
 			}
 
-			// la cible est l'arg 0
-			targetAddr := args[0]
+			targetAddr, err := find__name__from__addr(args[0], serverURL)
+			if err != nil {
+				fmt.Printf("Erreur : %v\n", err)
+				continue
+			}
 
 			// par defaut, l'intermediaire est le serveur
 			relayAddr := me.ServerUDPAddr
@@ -389,23 +421,26 @@ func main() {
 			}
 
 			// appel à notre fonction
-			err := me.Send__NatTraversalRequest(targetAddr, relayAddr)
-
+			err = me.Send__NatTraversalRequest(targetAddr, relayAddr)
 			if err != nil {
 				fmt.Printf(" errer demande NatTraversal : %v\n", err)
 			}
 
 		case "print":
-			targetAddr := ""
+			destAddr := ""
 
 			if len(args) > 0 {
-				targetAddr = args[0]
+				destAddr, err = find__name__from__addr(args[0], serverURL)
+				if err != nil {
+					fmt.Printf("Erreur : %v\n", err)
+					continue
+				}
 			}
 
-			go me.Print__Tree(targetAddr)
+			go me.Print__Tree(destAddr)
 
 		case "exit":
-			LogMsg("fin du peer\n")
+			p2p.LogMsg("fin du peer\n")
 			return
 
 		default:
@@ -433,8 +468,30 @@ func printHelp() {
 	fmt.Println(" exit                  	: quitter")
 }
 
-// fonction utilitaire pour afficher HH:MM:SS au début de chaque print
-func LogMsg(format string, a ...interface{}) {
-	timestamp := time.Now().Format("15:04:05")
-	fmt.Printf(timestamp+" "+format, a...)
+// fonction qui transforme un nom en adresse (ou adresse en adresse)
+func find__name__from__addr(input string, serverURL string) (string, error) {
+
+	// si l'entree contient ":" c'est une adresse (on le suppose)
+	if strings.Contains(input, ":") {
+		return input, nil
+	}
+
+	// on suppose alors que c'est un nom
+	addrs, err := client.Get__peer__adresses(serverURL, input)
+	if err != nil {
+		return "", fmt.Errorf("impossible de trouver lee peer '%s' : %v", input, err)
+	}
+	if len(addrs) == 0 {
+		return "", fmt.Errorf("aucune adresse trouvée pour le peer '%s'", input)
+	}
+
+	for _, addr := range addrs {
+		// lees addr ipv4 n'ont qu'1 seeul ':'
+		if strings.Count(addr, ":") == 1 {
+			return addr, nil
+		}
+	}
+
+	// sinon on renvoie ce qu'on trouve (càd une ipv6)
+	return addrs[0], nil
 }

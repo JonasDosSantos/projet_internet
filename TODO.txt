@@ -1,17 +1,16 @@
-Nathan : 
-Jonas : Diffie Hellman
-
+Jonas :
 
 
 Sources, commentaires, organisation
 
 
 
-Mettre a jour les Hello pour prendre en compte les extensions
 
 
 
-Manque t il des Handle__if__error
 
+Nathan : 
 
-fonction dans le main pour transformer automatiquement un nom en addr pcq c'est chiant de tapeer ip:port à chaque fois
+- Manque t il des Handle__if__error
+- pb avec les key dans active 
+- raccourcir les keep alive
