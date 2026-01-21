@@ -403,15 +403,9 @@ func (me *Me) Handle__DatumRequest(req *Message, addr *net.UDPAddr) {
 			// On chiffre le tout
 			encryptedBody, err := identity.Encrypt_AES(session.SharedKey, replyBody)
 			if err == nil {
-				// On envoie avec le type EncryptedDatum
-				reply := Message{
-					Id:   req.Id,
-					Type: TypeEncryptedDatum,
-					Body: encryptedBody,
-				}
-				me.Send__UDP(reply, addr)
-				Verbose_log("Envoi d'un Datum CHIFFRÉ à %s", addr)
-				return
+				// On remplace le body à envoyer par le body chiffré
+				replyBody = encryptedBody
+				Verbose_log("Le Datum que l'on va envoyer à %s est chiffré.", addr)
 			}
 		}
 
@@ -488,9 +482,24 @@ func (me *Me) Handle__RootReply(req *Message, addr *net.UDPAddr) {
 // handler pour les Datum : je redirige vers le pipe qui l'attend
 func (me *Me) Handle__Datum(req *Message, addr *net.UDPAddr) {
 
-	_, success := me.msg__verifier(req, addr, false, true, false)
+	session, success := me.msg__verifier(req, addr, false, true, false)
 	if !success {
 		return
+	}
+
+	if session.IsEncrypted {
+		Verbose_log("Le datum reçu de %s est chiffré.", addr)
+		// Déchiffrement
+		decryptedBody, err := identity.Decrypt_AES(session.SharedKey, req.Body)
+		if err != nil {
+			fmt.Printf("Erreur déchiffrement de %s : %v\n", addr, err)
+			return
+		}
+
+		Verbose_log("Datum déchiffré avec succès de %s", addr)
+
+		// On "triche" : on modifie le message pour faire croire qu'il était en clair
+		req.Body = decryptedBody
 	}
 
 	// recuperation du hash
@@ -704,31 +713,4 @@ func (me *Me) Handle__KeyExchange(req *Message, addr *net.UDPAddr) {
 	if Verbose {
 		fmt.Printf("SECRET ÉTABLI AVEC %s (Passivement)\n", addr)
 	}
-}
-
-func (me *Me) Handle__EncryptedDatum(req *Message, addr *net.UDPAddr) {
-	me.Mutex.Lock()
-	session, exists := me.Sessions[addr.String()]
-	me.Mutex.Unlock()
-
-	if !exists || !session.IsEncrypted {
-		fmt.Println("Reçu message chiffré d'une session non sécurisée, ignoré.")
-		return
-	}
-
-	// Déchiffrement
-	decryptedBody, err := identity.Decrypt_AES(session.SharedKey, req.Body)
-	if err != nil {
-		fmt.Printf("Erreur déchiffrement de %s : %v\n", addr, err)
-		return
-	}
-
-	Verbose_log("Message déchiffré avec succès de %s", addr)
-
-	// On "triche" : on modifie le message pour faire croire qu'il était en clair
-	req.Body = decryptedBody
-	req.Type = TypeDatum // On le remet en type normal (132)
-
-	// On le passe au handler normal qui va gérer la tuyauterie (pipes)
-	me.Handle__Datum(req, addr)
 }

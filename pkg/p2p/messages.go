@@ -14,13 +14,12 @@ const (
 	TypeNatTraversalRequest  = 4
 	TypeNatTraversalRequest2 = 5
 
-	TypeOk             = 128
-	Error              = 129
-	TypeHelloReply     = 130
-	TypeRootReply      = 131
-	TypeDatum          = 132
-	TypeNoDatum        = 133
-	TypeEncryptedDatum = 134
+	TypeOk         = 128
+	Error          = 129
+	TypeHelloReply = 130
+	TypeRootReply  = 131
+	TypeDatum      = 132
+	TypeNoDatum    = 133
 
 	TypeKeyExchange = 20
 

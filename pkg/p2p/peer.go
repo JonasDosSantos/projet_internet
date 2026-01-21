@@ -208,9 +208,6 @@ func (me *Me) Listen__loop() {
 		case TypeKeyExchange:
 			me.Handle__KeyExchange(msg, addr)
 
-		case TypeEncryptedDatum:
-			me.Handle__EncryptedDatum(msg, addr)
-
 		// mauvais type
 		default:
 			fmt.Printf("type de message non géré : %d\n", msg.Type)

@@ -14,7 +14,7 @@ import (
 // + pratique pour les Verbose_log de DEBUG
 func (me *Me) Send__UDP(msg Message, dest *net.UDPAddr) error {
 
-	if msg.Type != TypeDatum && msg.Type != TypeDatumRequest && msg.Type != TypeEncryptedDatum {
+	if msg.Type != TypeDatum && msg.Type != TypeDatumRequest {
 		Verbose_log("[DEBUG] Sent  : type: %s, id: %d, dest: %s\n", msg__type__to__string(msg.Type), msg.Id, dest)
 
 	}
