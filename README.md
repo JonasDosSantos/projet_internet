@@ -49,10 +49,12 @@ go run main.go
 go run main.go -b
 ```
 
-## Tests suggérés
+# Tests suggérés
 
-3 scénarios à éxécuter pour tester la plupart des fonctionnalités du notre programme
-Pour chacun des scénarios, commencez par vous créer un pair (immédiatement après avec 'go run'). Vous pouvez utiliser les valeurs par défaut de nom et de port, ne chargez aucun fichier.
+3 scénarios à éxécuter pour tester la plupart des fonctionnalités de notre programme.
+
+Pour chacun des scénarios, commencez par vous créer un pair (immédiatement après avec le 'go run'). Vous pouvez utiliser les valeurs par défaut de nom et de port, ne chargez aucun fichier.
+
 Vous devriez alors voir s'afficher ces lignes dans votre terminal:
 
 ```text
@@ -65,7 +67,7 @@ Commencez donc par taper:
 ```
 register
 ```
-Vous devez ensuite 'hello' le pair du prof, pour ça, il nous faut son adresse.
+Vous devez ensuite 'hello' le pair associé au serveur, pour ça, il nous faut son adresse.
 Pour obtenir son adresse, il nous faut son nom, on commence donc par lister les pairs connectés:
 ```
 peers
@@ -161,6 +163,7 @@ print
 ```
 
 Les fichier téléchargés son écrit en local dans l'ordinateur dans un dossier "downloads".
+
 
 ## Scénario 3:
 On veut maintenant partager un fichier à un autre pair. Si aucun dossier n'a été load à la connexion (immédiatement après le go run...), alors il faut en load un. 
