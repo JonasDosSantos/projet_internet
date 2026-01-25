@@ -44,12 +44,12 @@ go mod tidy
 go run main.go
 ```
 
-# Mode DEBUG (ou 'bavard', attention c'est très bavard)
+## Mode DEBUG (ou 'bavard', attention c'est très bavard)
 ```
 go run main.go -b
 ```
 
-# Tests suggérés
+## Tests suggérés
 
 3 scénarios à éxécuter pour tester la plupart des fonctionnalités du notre programme
 Pour chacun des scénarios, commencez par vous créer un pair (immédiatement après avec 'go run'). Vous pouvez utiliser les valeurs par défaut de nom et de port, ne chargez aucun fichier.
@@ -99,7 +99,7 @@ key <votre nom>
 ```
 pour vérifier que le register à fonctionné.
 
-# Scénario 1:
+## Scénario 1:
 On va tenter de 'percer' un NAT. Pour commencer, choisissez un pair (alice dans notre exemple) avec qui vous voulez parler et tentez de le 'hello'.
 ```
 hello alice
@@ -134,7 +134,7 @@ alice supporte le chiffrement !
 SECRET ÉTABLI AVEC <addr_alice> (Passivement)
 ```
 
-# Scénario 2:
+## Scénario 2:
 On va maintenant essayer de télécharger un fichier (ou dossier) d'un pair (dans l'exemple alice).
 Pour commencer, il faut établir la connexion avec le pair choisi, suivez donc les étapes du scénario 1 (ou choisissez le pair du prof avec qui la connexion est "simple").
 Les commandes implémentés dans le main gèrent beaucoup de choses automatiquement, il y a peu de choses à faire manuellement.
@@ -162,7 +162,7 @@ print
 
 Les fichier téléchargés son écrit en local dans l'ordinateur dans un dossier "downloads".
 
-# Scénario 3:
+## Scénario 3:
 On veut maintenant partager un fichier à un autre pair. Si aucun dossier n'a été load à la connexion (immédiatement après le go run...), alors il faut en load un. 
 ```
 load mon_dossier
