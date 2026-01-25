@@ -49,7 +49,8 @@ go run main.go
 go run main.go -b
 ```
 
-## Tests suggérés
+# Tests suggérés
+
 3 scénarios à éxécuter pour tester la plupart des fonctionnalités du notre programme
 Pour chacun des scénarios, commencez par vous créer un pair (immédiatement après avec 'go run'). Vous pouvez utiliser les valeurs par défaut de nom et de port, ne chargez aucun fichier.
 Vous devriez alors voir s'afficher ces lignes dans votre terminal:
@@ -64,7 +65,6 @@ Commencez donc par taper:
 ```
 register
 ```
-
 Vous devez ensuite 'hello' le pair du prof, pour ça, il nous faut son adresse.
 Pour obtenir son adresse, il nous faut son nom, on commence donc par lister les pairs connectés:
 ```
@@ -104,9 +104,73 @@ On va tenter de 'percer' un NAT. Pour commencer, choisissez un pair (alice dans 
 ```
 hello alice
 ```
-Que vous soyez en mode bavard ou non, vous devriez être averti que ce 'hello' à échoué. 
+Que vous soyez en mode bavard ou non, vous devriez être averti que ce 'hello' à échoué (il a échoué plusieurs fois car on renvoie jusqu'à 3 fois en cas de timeout). 
 Notre hello vient de créer un 'trou' dans notre propre nat, il faut maintenant demander à alice de nous ping en empruntant le trou qu'on vient de créer.
 ```
 nattraversal alice
 ```
-Remarque: on ne spécifie pas de second argument dans cette fonction lorsqu'on veut 
+Remarque: on ne spécifie pas de second argument dans cette fonction lorsqu'on veut que le serveur STUN soit l'intermédiaire.
+
+Vous devriez avoir reçu un 'Ok' du serveur.
+De son côté, alice devrait avoir réçu un 'NatTraversalRequest2' de la part du serveur, elle va tenteer de nous 'ping'.
+Puisqu'un trou à déjà été fait notre NAT, ce ping devrait passer mais puisqu'on ne connaît pas encore alice, on lui envoie un erreur "please hello first". (Voir notre commentaires la dessus dans le rapport pdf).
+
+Des trous ont été faits dans chacun de nos NAT, on peut maintenant:
+```
+hello alice
+```
+Celui-ci devrait marcher (à moins qu'un trou se soit "refermé" avec le temps).
+
+Pour vérifier que la connexion avec alice eest un succès, on peut taper:
+```
+active
+```
+On devrait voir son adresse dans la liste (ainsi qu'on morceau de sa clef public de signature)
+
+Remarque: Si alice suporte le chiffrement, elle l'a spécifié dans le bitmap de son 'helloReply' et alors un échange de clef à été effectué. Vous devriez voir le message:
+```text
+alice supporte le chiffrement !
+...
+SECRET ÉTABLI AVEC <addr_alice> (Passivement)
+```
+
+# Scénario 2:
+On va maintenant essayer de télécharger un fichier (ou dossier) d'un pair (dans l'exemple alice).
+Pour commencer, il faut établir la connexion avec le pair choisi, suivez donc les étapes du scénario 1 (ou choisissez le pair du prof avec qui la connexion est "simple").
+Les commandes implémentés dans le main gèrent beaucoup de choses automatiquement, il y a peu de choses à faire manuellement.
+
+Première fonctionnalité:
+```
+print alice
+```
+Cette commande va afficher l'entièreté de l'arborescence partagée par alice de manière lisible.
+Ceci nous permet de télécharger un fichier ou dossier spécifique d'alice sans avoir à télécharger toute son arborescence.
+```
+download alice pictures/teachers.jpg
+```
+
+On peut aussi décider de tout télécharger en ne spécifiant pas de chemin:
+```
+download alice
+```
+
+Lors d'un téléchargement, le roothash qu'on a en mémoire (RAM) est mis à jour et notre variable 'DataBase' est "remplie" par les données téléchargées.
+On peut alors print ce qu'on a téléchargé en tapant:
+```
+print
+```
+
+Les fichier téléchargés son écrit en local dans l'ordinateur dans un dossier "downloads".
+
+# Scénario 3:
+On veut maintenant partager un fichier à un autre pair. Si aucun dossier n'a été load à la connexion (immédiatement après le go run...), alors il faut en load un. 
+```
+load mon_dossier
+```
+Attention, ceci écrase ce que vous aviez déjà en mémoire (dans la variable RootHash et la DataBase).
+On peut afficher le contenu de ce qu'on vient de load via:
+```
+print
+```
+
+Un peer peut maintenant consulter notre arborescence et télécharger nos fichiers.

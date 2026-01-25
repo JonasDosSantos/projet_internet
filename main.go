@@ -180,11 +180,12 @@ func main() {
 
 		case "help":
 			printHelp()
+			continue
 
 		case "info":
 			fmt.Printf("MES INFOS: \n")
 			fmt.Printf("Nom : %s\n", my_name)
-			myAddr, err := find__name__from__addr(my_name, serverURL)
+			myAddr, err := find__addr__from__name(my_name, serverURL)
 			if err != nil {
 				fmt.Printf("Erreur : %v\n", err)
 				continue
@@ -195,6 +196,7 @@ func main() {
 			} else {
 				fmt.Printf("RootHash : %x\n", me.RootHash)
 			}
+			continue
 
 		case "register":
 			err = client.Register(serverURL, my_name, pubKeyBytes)
@@ -203,6 +205,7 @@ func main() {
 			} else {
 				p2p.LogMsg("enregistrement (HTTP) auprès du serveur réussi")
 			}
+			continue
 
 		case "active":
 			// on recupere la liste des pairs actifs
@@ -217,6 +220,7 @@ func main() {
 					fmt.Printf("- %s\n", active_list[i])
 				}
 			}
+			continue
 
 		case "peers":
 			// appel au serveur pour demander la liste de pair qu'il a
@@ -230,6 +234,7 @@ func main() {
 					fmt.Printf("- %s\n", p)
 				}
 			}
+			continue
 
 		case "key":
 			if len(args) < 1 {
@@ -245,6 +250,7 @@ func main() {
 			} else {
 				p2p.LogMsg("clef publique de %s :\n%x\n", peerName, key)
 			}
+			continue
 
 		case "addr":
 			if len(args) < 1 {
@@ -265,14 +271,15 @@ func main() {
 					fmt.Printf(" - %s\n", addr)
 				}
 			}
+			continue
 
 		case "hello":
 			if len(args) < 1 {
-				fmt.Println("usage: hello <ip:port>")
+				fmt.Println("usage: hello <nom ou addr>")
 				continue
 			}
 
-			destAddr, err := find__name__from__addr(args[0], serverURL)
+			destAddr, err := find__addr__from__name(args[0], serverURL)
 			if err != nil {
 				fmt.Printf("Erreur : %v\n", err)
 				continue
@@ -281,14 +288,15 @@ func main() {
 			p2p.LogMsg("envoi d'un hello à %s\n", destAddr)
 			// on appelle notre fonction dédiée
 			me.Send__hello(destAddr)
+			continue
 
 		case "ping":
 			if len(args) < 1 {
-				fmt.Println("usage: ping <ip:port>")
+				fmt.Println("usage: ping <nom ou addr>")
 				continue
 			}
 
-			destAddr, err := find__name__from__addr(args[0], serverURL)
+			destAddr, err := find__addr__from__name(args[0], serverURL)
 			if err != nil {
 				fmt.Printf("Erreur : %v\n", err)
 				continue
@@ -298,23 +306,7 @@ func main() {
 
 			// on appelle notre fonction dédiée
 			me.Send__ping(destAddr)
-
-		case "root":
-			if len(args) < 1 {
-				fmt.Println("usage: root <ip:port>")
-				continue
-			}
-
-			destAddr, err := find__name__from__addr(args[0], serverURL)
-			if err != nil {
-				fmt.Printf("Erreur : %v\n", err)
-				continue
-			}
-
-			p2p.LogMsg("RootRequest envoyé à %s ", destAddr)
-
-			// on utilise notre fonction dédiée
-			me.Send__RootRequest(destAddr)
+			continue
 
 		case "load":
 			if len(args) < 1 {
@@ -334,14 +326,15 @@ func main() {
 			} else {
 				fmt.Printf("erreur chargement du dossier voulu : %v\n", err)
 			}
+			continue
 
 		case "download":
 			if len(args) < 1 {
-				fmt.Println("usage: download <ip:port> [path_file]")
+				fmt.Println("usage: download <nom ou addr> [path_file]")
 				continue
 			}
 
-			destAddr, err := find__name__from__addr(args[0], serverURL)
+			destAddr, err := find__addr__from__name(args[0], serverURL)
 			if err != nil {
 				fmt.Printf("Erreur : %v\n", err)
 				continue
@@ -397,14 +390,15 @@ func main() {
 			}
 
 			p2p.LogMsg("téléchargement terminé en %v.\n", time.Since(start))
+			continue
 
 		case "nattraversal":
 			if len(args) < 1 {
-				fmt.Println("usage: nattraversal <ip:port_cible> [ip:port_intermediaire, default=server]")
+				fmt.Println("usage: nattraversal <nom ou addr> [nom ou addr, default=server]")
 				continue
 			}
 
-			targetAddr, err := find__name__from__addr(args[0], serverURL)
+			targetAddr, err := find__addr__from__name(args[0], serverURL)
 			if err != nil {
 				fmt.Printf("Erreur : %v\n", err)
 				continue
@@ -415,7 +409,11 @@ func main() {
 
 			// on utilise celui fourni par l'user (s'il en fourni un)
 			if len(args) >= 2 {
-				relayAddr = args[1]
+				relayAddr, err = find__addr__from__name(args[1], serverURL)
+				if err != nil {
+					fmt.Printf("Erreur : %v\n", err)
+					continue
+				}
 			}
 
 			// appel à notre fonction
@@ -423,12 +421,13 @@ func main() {
 			if err != nil {
 				fmt.Printf(" errer demande NatTraversal : %v\n", err)
 			}
+			continue
 
 		case "print":
 			destAddr := ""
 
 			if len(args) > 0 {
-				destAddr, err = find__name__from__addr(args[0], serverURL)
+				destAddr, err = find__addr__from__name(args[0], serverURL)
 				if err != nil {
 					fmt.Printf("Erreur : %v\n", err)
 					continue
@@ -436,6 +435,7 @@ func main() {
 			}
 
 			go me.Print__Tree(destAddr)
+			continue
 
 		case "exit":
 			p2p.LogMsg("fin du peer\n")
@@ -444,30 +444,30 @@ func main() {
 		default:
 			fmt.Println("Commande inconnue. Tapez 'help'.")
 		}
+		continue
 	}
 }
 
 // affiche la fonction d'aide
 func printHelp() {
 	fmt.Println("\nCOMMANDES DISPONIBLES:")
-	fmt.Println(" info                  	: mes informations")
-	fmt.Println(" register              	: enregistrement (HTTP) auprès du serveur")
-	fmt.Println(" active                	: lister les pairs actifs")
-	fmt.Println(" peers                 	: liste les pairs reconnus par le serveur")
-	fmt.Println(" key <nom>             	: obtenir la clef d'un peer")
-	fmt.Println(" addr <nom>            	: obtenir les adresses IP d'un peer")
-	fmt.Println(" load <path>           	: charge un fichier local dans le peer (pour le proposer aux autres peers)")
-	fmt.Println(" hello <addr>          	: envoyer un hello")
-	fmt.Println(" ping <addr>           	: envoyer un ping")
-	fmt.Println(" root <addr>           	: demander le RootHash")
-	fmt.Println(" download <addr> [file]	: télécharger les données d'un peer (default = whole tree)")
-	fmt.Println(" print [addr] 				: affiche l'arbre d'un pair (default: local)")
-	fmt.Println(" nattraversal <cible> [intermediaire]  	: demander à un intermediaire d'aider (default = server)")
-	fmt.Println(" exit                  	: quitter")
+	fmt.Println(" info                  						: mes informations")
+	fmt.Println(" register              						: enregistrement (HTTP) auprès du serveur")
+	fmt.Println(" active                						: lister les pairs actifs")
+	fmt.Println(" peers                 						: liste les pairs reconnus par le serveur")
+	fmt.Println(" key <nom ou addr>             				: obtenir la clef d'un peer")
+	fmt.Println(" addr <nom ou addr>            				: obtenir les adresses IP d'un peer")
+	fmt.Println(" load <path>           						: charge un fichier local dans le peer (pour le proposer aux autres peers)")
+	fmt.Println(" hello <nom ou addr>          					: envoyer un hello")
+	fmt.Println(" ping <nom ou addr>           					: envoyer un ping")
+	fmt.Println(" download <nom ou addr> [file]					: télécharger les données d'un peer (default = whole tree)")
+	fmt.Println(" print [nom ou addr] 							: affiche l'arbre d'un pair (default: local)")
+	fmt.Println(" nattraversal <nom ou addr> [intermediaire]  	: demander à un intermediaire d'aider (default = server)")
+	fmt.Println(" exit                  						: quitter")
 }
 
 // fonction qui transforme un nom en adresse (ou adresse en adresse)
-func find__name__from__addr(input string, serverURL string) (string, error) {
+func find__addr__from__name(input string, serverURL string) (string, error) {
 
 	// si l'entree contient ":" c'est une adresse (on le suppose)
 	if strings.Contains(input, ":") {
