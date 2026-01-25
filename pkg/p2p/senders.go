@@ -345,11 +345,15 @@ func (me *Me) Send__NatTraversalRequest2(destAddr *net.UDPAddr, body []byte) err
 //
 //	les attaques Man-in-the-Middle (MITM).
 func (me *Me) Send__KeyExchange(destAddr string) error {
-
 	// On verrouille pour lire la map des sessions de manière thread-safe
 	me.Mutex.Lock()
 	session, exists := me.Sessions[destAddr]
 	me.Mutex.Unlock()
+
+	// Cette variable permet de savoir si la clé a déjà été générée. Si c'est le cas,
+	// on a déjà calculer notre secret partagé, donc on n'en aura plus besoin après cette fonction.
+	// > La même variable existe dans "Handle_KeyExchange" dans handle.go
+	isAlreadyDefinedEphemeralPrivKey := false
 
 	if !exists {
 		return fmt.Errorf("session inconnue")
@@ -365,6 +369,7 @@ func (me *Me) Send__KeyExchange(destAddr string) error {
 
 	} else {
 		// Cas B : On en génère une nouvelle
+		isAlreadyDefinedEphemeralPrivKey = true
 		curve := ecdh.X25519()
 		privKey, err := curve.GenerateKey(rand.Reader)
 		if err != nil {
@@ -395,6 +400,10 @@ func (me *Me) Send__KeyExchange(destAddr string) error {
 	udpAddr, err := net.ResolveUDPAddr("udp", destAddr)
 	if err != nil {
 		return err
+	}
+
+	if isAlreadyDefinedEphemeralPrivKey {
+		session.EphemeralPriv = nil
 	}
 
 	return me.Send__UDP(msg, udpAddr)

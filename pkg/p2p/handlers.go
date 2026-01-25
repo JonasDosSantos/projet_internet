@@ -665,6 +665,11 @@ func (me *Me) Handle__KeyExchange(req *Message, addr *net.UDPAddr) {
 	session, exists := me.Sessions[addr.String()]
 	me.Mutex.Unlock()
 
+	// Cette variable permet de savoir si la clé a déjà été généré.
+	// Si c'est le cas, on a déjà envoyé notre clé, donc on n'en aura plus besoin après cette fonction.
+	// > La même variable existe dans "Send_KeyExchange" dans senders.go
+	isAlreadyDefinedEphemeralPrivKey := false
+
 	if !exists || session.PublicKey == nil {
 		return
 	}
@@ -689,6 +694,8 @@ func (me *Me) Handle__KeyExchange(req *Message, addr *net.UDPAddr) {
 			return
 		}
 		session.EphemeralPriv = priv
+	} else {
+		isAlreadyDefinedEphemeralPrivKey = true
 	}
 
 	// Calcul du secret
@@ -705,10 +712,9 @@ func (me *Me) Handle__KeyExchange(req *Message, addr *net.UDPAddr) {
 	// On garde EphemeralPriv tant que la session est active ou on le supprime
 	// Pour l'instant, on peut le laisser à nil pour dire "c'est fini"
 
-	//////////////////////////////////////////////
-	//////////////////////////////////////////////
-	//////////////////////////////////////////////
-	// session.EphemeralPriv = nil
+	if isAlreadyDefinedEphemeralPrivKey {
+		session.EphemeralPriv = nil
+	}
 
 	if Verbose {
 		fmt.Printf("SECRET ÉTABLI AVEC %s (Passivement)\n", addr)
