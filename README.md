@@ -166,6 +166,7 @@ Les fichier téléchargés son écrit en local dans l'ordinateur dans un dossier
 
 
 ## Scénario 3:
+
 On veut maintenant partager un fichier à un autre pair. Si aucun dossier n'a été load à la connexion (immédiatement après le go run...), alors il faut en load un. 
 ```
 load mon_dossier

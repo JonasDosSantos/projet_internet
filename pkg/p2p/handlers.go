@@ -632,8 +632,6 @@ func (me *Me) Handle__NatTraversalRequest2(req *Message, addr *net.UDPAddr) {
 
 	Verbose_log("NatTraversalRequest2 reçu de %s", addr)
 
-	fmt.Printf(" DEBUG :Body du Nat2 (Bytes): %v\n", req.Body)
-
 	// on récupère l'ip et le port
 	var targetIP net.IP
 	var targetPort uint16

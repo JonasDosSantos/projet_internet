@@ -14,10 +14,6 @@ identity.pem
 # Fichiers spécifiques OS
 .DS_Store
 
-# Fichiers IDE (optionnel mais recommandé)
+# Fichiers IDE
 .vscode/
 .idea/
-
-printtree.txt
-handler.txt
-ancienmain.txt
