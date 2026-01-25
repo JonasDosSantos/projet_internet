@@ -143,11 +143,9 @@ func main() {
 	// DEBUT DE LA BOUCLE INTERACTIVE ENTRE L'USER ET LE PROGRMAME
 	////////////////////////////////////////////////////////////////
 
-	// on print la liste des commandes dispos
-	printHelp()
-
-	fmt.Println("\nPour commencer, il faut se regsiter auprès du serveur.")
+	fmt.Println("\nPour commencer, il faut se register auprès du serveur.")
 	fmt.Println("Pour être reconnu par le serveur comme un pair, il faut envoyer un 'Hello' à son peer.")
+	fmt.Println("Pour connaître la liste des commandes disponibles, taper 'help'.")
 
 	// boucle infinie
 	for {

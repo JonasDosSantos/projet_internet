@@ -183,6 +183,9 @@ func (me *Me) Listen__loop() {
 		case TypeNatTraversalRequest2:
 			me.Handle__NatTraversalRequest2(msg, addr)
 
+		case TypeNatTraversalRequest:
+			me.Handle__NatTraversalRequest(msg, addr)
+
 		/////////////
 		// REPONSES
 		/////////////
